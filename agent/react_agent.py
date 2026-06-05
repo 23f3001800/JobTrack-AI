@@ -79,7 +79,7 @@ def run(job_url: str, user_background: str = "") -> dict:
 
 if __name__ == "__main__":
     output = run(
-        job_url="https://www.ycombinator.com/jobs/role/ai-engineer",
+        job_url="https://www.ycombinator.com/jobs",
         user_background="Python developer, built RAG systems and LangGraph agents, 1 year experience"
     )
     print(f"\nFinal status: {output['status']}")

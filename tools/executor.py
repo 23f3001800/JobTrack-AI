@@ -21,21 +21,47 @@ def execute_tool(name: str, args: dict) -> str:
     except Exception as e:
         return f"Tool error ({name}): {str(e)}"
     
-# ── Stubs (real code added Day 2) ─────────────────────
+
+from tools.scraper import scrape_job_url as _scrape_real
+from tools.researcher import research_company as _research_real
+from tools.cv_processor import tailor_cv_bullets as _tailor_real
+from tools.cv_processor import write_cover_letter as _letter_real
+
 def _scrape_job_url(url: str) -> str:
-    return f"[STUB] Job posting from {url}: Role=AI Engineer, Company=Acme, Requirements=Python LangGraph MCP"
+    return _scrape_real(url)
 
 def _research_company(company_name: str, job_title: str = "") -> str:
-    return f"[STUB] {company_name}: AI-first startup, Series A, uses Python + FastAPI, values autonomy"
+    return _research_real(company_name, job_title)
 
 def _tailor_cv_bullets(job_requirements: str, company_profile: str) -> str:
-    return "[STUB] Tailored bullets: • Built RAG systems • Deployed LangGraph agents • MCP integration"
+    return _tailor_real(job_requirements, company_profile)
 
-def _write_cover_letter(job_analysis: str, company_profile: str, tailored_bullets: str) -> str:
-    return "[STUB] Cover letter: Dear Hiring Manager, I am excited to apply for this role..."
+def _write_cover_letter(job_analysis: str, company_profile: str,
+                        tailored_bullets: str) -> str:
+    return _letter_real(job_analysis, company_profile, tailored_bullets)
 
-def _write_outreach_dm(company_name: str, job_title: str, company_profile: str) -> str:
-    return "[STUB] Hi [Name], I saw your work at {company_name}...".format(company_name=company_name)
+def _write_outreach_dm(company_name: str, job_title: str,
+                      company_profile: str) -> str:
+    # WHY write the DM with Claude directly here (not a separate file)?
+    # DM writing is simple enough to not need its own module.
+    # It's one LLM call with clear inputs — keeping it in executor
+    # avoids over-engineering a 10-line function.
+    import anthropic
+    client = anthropic.Anthropic()
+    resp = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=300,
+        messages=[{"role":"user","content":
+            f"""Write a LinkedIn cold DM to an employee at {company_name}.
+I'm applying for {job_title}. Reference something specific from the company profile.
+Ask ONE specific technical question about their stack or approach.
+Under 100 words. Not salesy. Sound like a curious engineer, not a job beggar.
+
+Company profile: {company_profile[:300]}"""}]
+    )
+    return resp.content[0].text
+
+
 
 def _log_application(company: str, job_title: str,
                      cover_letter: str = "", tailored_bullets: str = "",
@@ -56,3 +82,4 @@ def _log_application(company: str, job_title: str,
     with open(tracker, "w") as f:
         json.dump(data, f, indent=2)
     return f"Logged application to {company} — files in {WORKSPACE}/"
+
