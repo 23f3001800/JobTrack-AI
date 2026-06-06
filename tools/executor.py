@@ -1,9 +1,17 @@
 import json, os
 from datetime import datetime
+from langsmith import traceable
+
 
 WORKSPACE = os.getenv("WORKSPACE_DIR", "./workspace")
 
+@traceable(name="tool-executor")
 def execute_tool(name: str, args: dict) -> str:
+    from langsmith import get_current_run_tree
+    run = get_current_run_tree()
+    if run:
+        run.add_metadata({"tool_name": name, "tool_args": list(args.keys())})
+
     """Dispatch tool call to correct handler."""
     handlers = {
         "scrape_job_url":      _scrape_job_url,
@@ -14,13 +22,16 @@ def execute_tool(name: str, args: dict) -> str:
         "log_application":     _log_application,
     }
     handler = handlers.get(name)
-    if not handler:
-        return f"Unknown tool: {name}"
+    if not handler: return f"Unknown tool: {name}"
     try:
-        return handler(**args)
+        result = handler(**args)
+        if run: run.add_metadata({"result_length": len(result)})
+        return result
     except Exception as e:
-        return f"Tool error ({name}): {str(e)}"
+        if run: run.add_metadata({"error": str(e)})
+        return f"Tool error ({name}): {e}"
     
+
 
 from tools.scraper import scrape_job_url as _scrape_real
 from tools.researcher import research_company as _research_real

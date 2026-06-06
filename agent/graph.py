@@ -6,8 +6,12 @@ from langgraph.checkpoint.memory import MemorySaver
 from anthropic import Anthropic
 from tools.schemas import ALL_TOOLS
 from tools.executor import execute_tool
+from langsmith import traceable, get_current_run_tree
 from dotenv import load_dotenv
 load_dotenv()
+
+if os.getenv("LANGCHAIN_TRACING_V2") == "true":
+    os.environ.setdefault("LANGCHAIN_PROJECT", "jobtrack-ai")
 
 class JobState(TypedDict):
     job_url:          str
@@ -35,6 +39,7 @@ You have 6 tools. Call them in ORDER, one at a time:
 Check which steps are already done in the user message before deciding which tool to call next.
 Never call a step that is already marked complete."""
 
+@traceable(name="orchestrator-node", tags=["agent"])
 def orchestrator(state: JobState) -> dict:
     """LLM decides which tool to call next based on what's done."""
     # Build status message so LLM knows what's done
@@ -57,13 +62,25 @@ Call the next PENDING step now."""
     messages = state.get("messages", [])
     messages = messages + [{"role": "user", "content": status}]
 
+    run = get_current_run_tree()
     resp = client.messages.create(
         model="claude-sonnet-4-20250514", max_tokens=1024,
         system=ORCHESTRATOR_SYSTEM,
         tools=ALL_TOOLS, messages=messages
     )
+
+    if run:
+        run.add_metadata({
+            "input_tokens":  resp.usage.input_tokens,
+            "output_tokens": resp.usage.output_tokens,
+            "cost_usd": resp.usage.input_tokens * 0.000003
+                        + resp.usage.output_tokens * 0.000015,
+            "iteration": state.get("iterations", 0)
+        })
+
     return {"messages": [{"role": "assistant", "content": resp.content}],
             "iterations": state.get("iterations", 0) + 1}
+
 
 def tool_executor(state: JobState) -> dict:
     """Execute all tool_use blocks from the last assistant message."""
@@ -77,7 +94,6 @@ def tool_executor(state: JobState) -> dict:
         print(f"  → Executing: {block.name}")
         result = execute_tool(block.name, block.input)
 
-        # WHY map tool results to state fields?
         # This is how upstream nodes (the LLM) know what's done.
         # When the orchestrator sees state['job_analysis'] is set,
         # it knows to skip step 1 and call step 2 instead.
@@ -125,7 +141,7 @@ builder.add_conditional_edges("orchestrator", should_continue,
                                {"tools": "tools", "end": END})
 builder.add_edge("tools", "orchestrator")
 
-# WHY MemorySaver? If the run crashes at step 4,
+
 # you can resume from step 4 using the same thread_id.
 # In production this would be a PostgresSaver instead.
 checkpointer = MemorySaver()
