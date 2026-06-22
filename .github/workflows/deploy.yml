@@ -6,38 +6,49 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.11", cache: pip}
-      - run: pip install -r requirements.txt
 
-      - name: Install Playwright
-        run: playwright install chromium && playwright install-deps chromium
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # WHY install Playwright here too?
+      # tests/test_graph.py imports from agent/graph.py which
+      # imports tools/scraper.py which imports playwright.
+      # Without installing chromium, the import itself fails.
+      # We install chromium but tests mock the browser calls —
+      # no actual browser launches in unit tests.
+      - name: Install Playwright browser
+        run: playwright install chromium --with-deps
 
       - name: Lint
         run: ruff check .
 
-      - name: Tests
+      - name: Run tests
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          API_KEY: ci-key
-        run: pytest tests/ -v
+          API_KEY: ci-test-key
+          LANGCHAIN_TRACING_V2: "false"
+        run: pytest tests/ -v --tb=short
 
-
-  deploy:
-    needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build image
-        run: docker build -t jobtrack-ai:${{ github.sha }} .
-      - name: Deploy to Railway
+      # Eval gate: only on push to main (runs real agent = costs money)
+      - name: Eval gate
+        if: github.event_name == 'push'
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          npm install -g @railway/cli
-          railway up --service jobtrack-api --detach
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LANGCHAIN_API_KEY: ${{ secrets.LANGCHAIN_API_KEY }}
+          LANGCHAIN_TRACING_V2: "true"
+        run: python scripts/run_evals.py
+
+
+      - name: Build Docker image
+        run: docker build -t jobtrack-ai:${{ github.sha }} .
+
+      - name: Deploy to Railway
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env: {RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}}
+        run: npm i -g @railway/cli && railway up --service jobtrack-api --detach
