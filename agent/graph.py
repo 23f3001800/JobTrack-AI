@@ -64,7 +64,7 @@ Call the next PENDING step now."""
 
     run = get_current_run_tree()
     resp = client.messages.create(
-        model="claude-sonnet-4-20250514", max_tokens=1024,
+        model="claude-sonnet-4-6", max_tokens=1024,
         system=ORCHESTRATOR_SYSTEM,
         tools=ALL_TOOLS, messages=messages
     )

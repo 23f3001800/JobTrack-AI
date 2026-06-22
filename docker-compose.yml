@@ -1,0 +1,19 @@
+services:
+  jobtrack:
+    build: .
+    ports:
+      - "8001:8001"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - API_KEY=${API_KEY:-dev-key}
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
+      - LANGCHAIN_TRACING_V2=true
+      - LANGCHAIN_PROJECT=jobtrack-ai
+      - WORKSPACE_DIR=/app/workspace
+    volumes:
+      # WHY mount workspace as a volume?
+      # Container filesystem is ephemeral — it vanishes on restart.
+      # A volume persists output files (cover letters, tracker.json)
+      # between container restarts. Your work isn't lost.
+      - ./workspace:/app/workspace
+    restart: unless-stopped
