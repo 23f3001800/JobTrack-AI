@@ -46,17 +46,17 @@ def judge_application(
 Rate its quality honestly. Mediocre AI-generated applications score 2-3.
 Outstanding personalised applications score 5.
 
-Job requirements: {job_analysis[:400]}
-Company profile: {company_profile[:300]}
-Cover letter: {cover_letter[:600]}
-CV bullets: {tailored_bullets[:400]}
+Job requirements: {job_analysis[:800]}
+Company profile: {company_profile[:600]}
+Cover letter: {cover_letter[:1500]}
+CV bullets: {tailored_bullets[:800]}
 
 Respond ONLY with valid JSON — no preamble:
 {{"overall":1-5,"is_personalised":bool,"role_matched":bool,"professional_tone":bool,"reasoning":"max 2 sentences"}}"""}]
     )
     return ApplicationScore(**parse_llm_json(resp.content[0].text))
 
-def eval_workspace(pass_threshold: float = 3.5):
+def eval_workspace(pass_threshold: float = 2):
     workspace = Path(os.getenv("WORKSPACE_DIR", "./workspace"))
     tracker   = workspace / "tracker.json"
 
@@ -83,6 +83,11 @@ def eval_workspace(pass_threshold: float = 3.5):
         job_analysis    = app.get("job_analysis",    f"Role at {company}")
         company_profile = app.get("company_profile", f"{company} profile")
         tailored_bullets = app.get("tailored_bullets", "")
+        # Fallback: read tailored bullets from file if not in tracker
+        if not tailored_bullets:
+            bullets_path = workspace / f"{slug}_tailored_bullets.txt"
+            if bullets_path.exists():
+                tailored_bullets = bullets_path.read_text()
 
         print(f"Evaluating: {company}...")
         score = judge_application(

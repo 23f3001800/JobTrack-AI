@@ -65,15 +65,17 @@ TOOL_WRITE_DM = {
 
 TOOL_LOG_APPLICATION = {
     "name": "log_application",
-    "description": "Save all generated outputs to workspace/ and log to tracker.json.",
+    "description": "Save all generated outputs to workspace/ and log to tracker.json. Pass ALL generated content so it is persisted.",
     "input_schema": {
         "type": "object",
         "properties": {
             "company": {"type": "string"},
             "job_title": {"type": "string"},
-            "cover_letter": {"type": "string"},
-            "tailored_bullets": {"type": "string"},
-            "outreach_dm": {"type": "string"}
+            "cover_letter": {"type": "string", "description": "The full cover letter text"},
+            "tailored_bullets": {"type": "string", "description": "The tailored CV bullet points"},
+            "outreach_dm": {"type": "string", "description": "The LinkedIn outreach DM"},
+            "job_analysis": {"type": "string", "description": "The scraped job analysis from step 1"},
+            "company_profile": {"type": "string", "description": "The company research profile from step 2"}
         },
         "required": ["company", "job_title"]
     }

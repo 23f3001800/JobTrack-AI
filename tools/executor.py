@@ -78,16 +78,23 @@ Company profile: {company_profile[:300]}"""}]
 
 def _log_application(company: str, job_title: str,
                      cover_letter: str = "", tailored_bullets: str = "",
-                     outreach_dm: str = "") -> str:
+                     outreach_dm: str = "", job_analysis: str = "",
+                     company_profile: str = "") -> str:
     os.makedirs(WORKSPACE, exist_ok=True)
-    slug = company.lower().replace(" ","_")
+    slug = company.lower().replace(" ", "_")
     entry = {"company": company, "job_title": job_title,
              "applied_at": datetime.now().isoformat(),
-             "status": "applied"}
-     # Save outputs
+             "status": "applied",
+             "job_analysis": job_analysis,
+             "company_profile": company_profile,
+             "tailored_bullets": tailored_bullets}
+    # Save outputs
     if cover_letter:
         with open(f"{WORKSPACE}/{slug}_cover_letter.txt", "w") as f:
             f.write(cover_letter)
+    if tailored_bullets:
+        with open(f"{WORKSPACE}/{slug}_tailored_bullets.txt", "w") as f:
+            f.write(tailored_bullets)
     # Append to tracker
     tracker = f"{WORKSPACE}/tracker.json"
     data = json.load(open(tracker)) if os.path.exists(tracker) else []

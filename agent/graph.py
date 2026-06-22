@@ -34,7 +34,7 @@ You have 6 tools. Call them in ORDER, one at a time:
 3. tailor_cv_bullets → personalise CV
 4. write_cover_letter → draft cover letter
 5. write_outreach_dm → draft LinkedIn DM
-6. log_application → save everything
+6. log_application → save everything (IMPORTANT: pass ALL outputs from previous steps including job_analysis, company_profile, tailored_bullets, cover_letter, and outreach_dm)
 
 Check which steps are already done in the user message before deciding which tool to call next.
 Never call a step that is already marked complete."""

@@ -62,16 +62,16 @@ CANDIDATE'S FULL CV:
 def write_cover_letter(job_analysis: str, company_profile: str,
                        tailored_bullets: str) -> str:
     """Write a personalised 3-paragraph cover letter."""
-    load_cv()  # validates CV exists; content used via tailored_bullets
+    cv_text = load_cv()
     client = anthropic.Anthropic()
     resp = client.messages.create(
         model="claude-sonnet-4-20250514",
-        max_tokens=800,
+        max_tokens=1200,
         messages=[{"role":"user","content":
             f"""Write a professional 3-paragraph cover letter.
 
 Para 1: Why THIS company specifically (use company profile details — not generic)
-Para 2: What I bring to THIS role (use tailored bullets as evidence)
+Para 2: What I bring to THIS role (use tailored bullets AND my CV as evidence)
 Para 3: Forward-looking — what I'd work on / contribute
 
 Must include at least one specific detail from the company profile.
@@ -80,6 +80,7 @@ Keep under 300 words. No fluff.
 
 JOB: {job_analysis[:500]}
 COMPANY: {company_profile[:400]}
-MY RELEVANT EXPERIENCE: {tailored_bullets}"""}]
+MY RELEVANT EXPERIENCE (tailored): {tailored_bullets}
+MY FULL CV: {cv_text[:2000]}"""}]
     )
     return resp.content[0].text
