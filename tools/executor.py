@@ -1,6 +1,10 @@
 import json, os
 from datetime import datetime
 from langsmith import traceable
+from tools.scraper import scrape_job_url as _scrape_real
+from tools.researcher import research_company as _research_real
+from tools.cv_processor import tailor_cv_bullets as _tailor_real
+from tools.cv_processor import write_cover_letter as _letter_real
 
 
 WORKSPACE = os.getenv("WORKSPACE_DIR", "./workspace")
@@ -31,12 +35,6 @@ def execute_tool(name: str, args: dict) -> str:
         if run: run.add_metadata({"error": str(e)})
         return f"Tool error ({name}): {e}"
     
-
-
-from tools.scraper import scrape_job_url as _scrape_real
-from tools.researcher import research_company as _research_real
-from tools.cv_processor import tailor_cv_bullets as _tailor_real
-from tools.cv_processor import write_cover_letter as _letter_real
 
 def _scrape_job_url(url: str) -> str:
     return _scrape_real(url)
