@@ -1,4 +1,6 @@
-import json, os, sys
+import json
+import os
+import sys
 from pathlib import Path
 from anthropic import Anthropic
 from pydantic import BaseModel
@@ -7,8 +9,6 @@ load_dotenv()
 
 client = Anthropic()
 
-
-import json
 
 def parse_llm_json(text: str):
     text = text.strip()
@@ -65,7 +65,8 @@ def eval_workspace(pass_threshold: float = 3.5):
         sys.exit(0)
     applications = json.loads(tracker.read_text())
     if not applications:
-        print("Tracker is empty."); sys.exit(0)
+        print("Tracker is empty.")
+        sys.exit(0)
 
     all_scores, results = [], []
     for app in applications:

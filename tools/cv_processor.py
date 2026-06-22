@@ -62,7 +62,7 @@ CANDIDATE'S FULL CV:
 def write_cover_letter(job_analysis: str, company_profile: str,
                        tailored_bullets: str) -> str:
     """Write a personalised 3-paragraph cover letter."""
-    cv_text = load_cv()
+    load_cv()  # validates CV exists; content used via tailored_bullets
     client = anthropic.Anthropic()
     resp = client.messages.create(
         model="claude-sonnet-4-20250514",

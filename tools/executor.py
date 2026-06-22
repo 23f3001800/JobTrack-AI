@@ -1,4 +1,5 @@
-import json, os
+import json
+import os
 from datetime import datetime
 from langsmith import traceable
 from tools.scraper import scrape_job_url as _scrape_real
@@ -26,13 +27,16 @@ def execute_tool(name: str, args: dict) -> str:
         "log_application":     _log_application,
     }
     handler = handlers.get(name)
-    if not handler: return f"Unknown tool: {name}"
+    if not handler:
+        return f"Unknown tool: {name}"
     try:
         result = handler(**args)
-        if run: run.add_metadata({"result_length": len(result)})
+        if run:
+            run.add_metadata({"result_length": len(result)})
         return result
     except Exception as e:
-        if run: run.add_metadata({"error": str(e)})
+        if run:
+            run.add_metadata({"error": str(e)})
         return f"Tool error ({name}): {e}"
     
 
