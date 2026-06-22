@@ -1,0 +1,45 @@
+{
+  "avg_score": 2.2,
+  "results": [
+    {
+      "company": "BlueCargo",
+      "overall": 2,
+      "is_personalised": false,
+      "role_matched": false,
+      "professional_tone": true,
+      "reasoning": "The cover letter contains generic AI-generated flattery referencing BlueCargo's YC pedigree and funding, but abruptly cuts off mid-sentence with no CV bullets provided, making it impossible to assess role fit. The application feels templated and incomplete, demonstrating no genuine knowledge of the specific role requirements or personal connection to the company's work."
+    },
+    {
+      "company": "Great Question",
+      "overall": 2,
+      "is_personalised": false,
+      "role_matched": false,
+      "professional_tone": true,
+      "reasoning": "The cover letter mentions Great Question by name and drops relevant company details (YC, Gusto, Brex), but pivots immediately into generic AI/RAG infrastructure talk that doesn't match the actual role requirements provided. The application feels like a template where the company name was swapped in, the cover letter is truncated mid-sentence, and no CV bullets were submitted."
+    },
+    {
+      "company": "Nextera Robotics",
+      "overall": 2,
+      "is_personalised": false,
+      "role_matched": false,
+      "professional_tone": true,
+      "reasoning": "The cover letter contains generic AI buzzwords and appears truncated mid-sentence, suggesting a poorly executed AI-generated template with superficial company name insertion. No CV bullets were provided, making it impossible to assess actual qualifications for a robotics role."
+    },
+    {
+      "company": "Peakflo",
+      "overall": 2,
+      "is_personalised": false,
+      "role_matched": false,
+      "professional_tone": true,
+      "reasoning": "The cover letter contains generic AI buzzwords and appears truncated mid-sentence, suggesting poor quality AI generation with no actual job role or CV bullets provided for proper evaluation. Without the actual role requirements or CV content, meaningful assessment is impossible, and the letter reads as templated rather than genuinely personalised."
+    },
+    {
+      "company": "14.ai",
+      "overall": 3,
+      "is_personalised": true,
+      "role_matched": true,
+      "professional_tone": true,
+      "reasoning": "The cover letter shows genuine personalisation with specific company details (Vercel, Slack, Dropbox, Algolia backing) and relevant technical experience (LLM pipelines, RAG systems), which is above average. However, the letter appears cut off mid-sentence and the CV bullets are entirely missing, making it impossible to fully evaluate the application's strength."
+    }
+  ]
+}
