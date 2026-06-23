@@ -1,7 +1,6 @@
 import json
 import os
 import uuid
-from pathlib import Path
 
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -100,12 +99,17 @@ async def run_agent(request: Request, body: RunRequest,
 
 @app.get("/tracker", tags=["tracker"])
 async def get_tracker(_=Depends(verify_key)):
-    """Return all tracked job applications from tracker.json."""
-    tracker = Path(os.getenv("WORKSPACE_DIR","./workspace")) / "tracker.json"
-    if not tracker.exists():
-        return {"applications": [], "total": 0}
-    data = json.loads(tracker.read_text())
-    return {"applications": data, "total": len(data)}
+    """Return all tracked job applications.
+
+    WHY use db.get_db() instead of reading tracker.json directly?
+    In production, this reads from Supabase PostgreSQL.
+    In local dev, it falls back to reading tracker.json.
+    The API doesn't need to know which backend is active.
+    """
+    from db import get_db
+    db = get_db()
+    applications = db.get_applications()
+    return {"applications": applications, "total": len(applications)}
 
 @app.get("/health")
 def health():

@@ -1,6 +1,4 @@
-import json
 import os
-from datetime import datetime
 from langsmith import traceable
 from tools.scraper import scrape_job_url as _scrape_real
 from tools.researcher import research_company as _research_real
@@ -111,26 +109,25 @@ def _log_application(company: str, job_title: str,
                      cover_letter: str = "", tailored_bullets: str = "",
                      outreach_dm: str = "", job_analysis: str = "",
                      company_profile: str = "") -> str:
-    os.makedirs(WORKSPACE, exist_ok=True)
-    slug = company.lower().replace(" ", "_")
-    entry = {"company": company, "job_title": job_title,
-             "applied_at": datetime.now().isoformat(),
-             "status": "applied",
-             "job_analysis": job_analysis,
-             "company_profile": company_profile,
-             "tailored_bullets": tailored_bullets}
-    # Save outputs
-    if cover_letter:
-        with open(f"{WORKSPACE}/{slug}_cover_letter.txt", "w") as f:
-            f.write(cover_letter)
-    if tailored_bullets:
-        with open(f"{WORKSPACE}/{slug}_tailored_bullets.txt", "w") as f:
-            f.write(tailored_bullets)
-    # Append to tracker
-    tracker = f"{WORKSPACE}/tracker.json"
-    data = json.load(open(tracker)) if os.path.exists(tracker) else []
-    data.append(entry)
-    with open(tracker, "w") as f:
-        json.dump(data, f, indent=2)
-    return f"Logged application to {company} — files in {WORKSPACE}/"
+    """Log a completed application to the database.
+
+    WHY delegate to db.get_db() instead of writing JSON directly?
+    The db layer handles both Supabase (production) and JSON fallback
+    (local dev) transparently. This function doesn't need to know
+    which backend is active.
+    """
+    from db import get_db
+    db = get_db()
+
+    db.log_application({
+        "company": company,
+        "job_title": job_title,
+        "cover_letter": cover_letter,
+        "tailored_bullets": tailored_bullets,
+        "outreach_dm": outreach_dm,
+        "job_analysis": job_analysis,
+        "company_profile": company_profile,
+    })
+
+    return f"Logged application to {company}"
 
