@@ -262,9 +262,35 @@ async def interview_prep(
     return {"prep": prep}
 
 
+class FollowupRequest(BaseModel):
+    company: str = Field(..., description="Company name")
+    job_title: str = Field(..., description="Job title")
+    days_since_applied: int = Field(7, description="Days since applying")
+    cover_letter_excerpt: str = Field("", description="Original cover letter excerpt")
+    channel: str = Field("email", description="'email' or 'linkedin'")
+
+
+@app.post("/followup", tags=["tools"])
+async def followup(
+    body: FollowupRequest,
+    user: AuthUser = Depends(verify_user),
+):
+    """Generate a context-aware follow-up message."""
+    from tools.followup import generate_followup
+
+    result = generate_followup(
+        company=body.company,
+        job_title=body.job_title,
+        days_since_applied=body.days_since_applied,
+        cover_letter_excerpt=body.cover_letter_excerpt,
+        channel=body.channel,
+    )
+    return result
+
+
 @app.get("/health")
 def health():
     """Health check endpoint — no auth required."""
-    return {"status": "ok", "mcp_tools": 7, "version": "3.1.0",
+    return {"status": "ok", "mcp_tools": 7, "version": "4.0.0",
             "agents": ["scout", "research", "writer", "quality", "applier"],
-            "tools": 11, "tests": 20}
+            "tools": 13, "tests": 20}

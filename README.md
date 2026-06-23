@@ -155,6 +155,8 @@ docker compose up --build  # Backend on :8000, Dashboard on :3000
 | `GET` | `/tracker` | JWT/Key | List applications (user-scoped) |
 | `PATCH` | `/tracker/{id}/status` | JWT/Key | Update application status |
 | `POST` | `/generate-pdf` | JWT/Key | Generate tailored PDF resume |
+| `POST` | `/interview-prep` | JWT/Key | Generate tailored interview questions |
+| `POST` | `/followup` | JWT/Key | Generate follow-up messages (email/LinkedIn) |
 | `GET` | `/download/{file}` | JWT/Key | Download generated files |
 | `POST` | `/auth/signup` | None | Create account |
 | `POST` | `/auth/login` | None | Get JWT tokens |
