@@ -23,6 +23,7 @@ from unittest.mock import patch
 # The graph should route through all agents using these outputs.
 STUB_OUTPUTS = {
     "scrape_job_url":     "JOB TITLE: AI Engineer\nCOMPANY: TechCorp\nREQUIREMENTS: Python, LangGraph",
+    "search_jobs":        "Found 3 job postings:\n--- Job 1 ---\nTitle: AI Engineer at TechCorp\nURL: https://example.com/job/1",
     "research_company":   "TechCorp builds developer tools. Series A, 30 engineers. Uses Python + FastAPI.",
     "analyze_role_fit":   "FIT SCORE: 8/10\nMATCHING SKILLS: Python, LangGraph, FastAPI\nGAPS: Kubernetes",
     "tailor_cv_bullets":  "• Built RAG systems with LangGraph\n• Deployed FastAPI services on Railway",

@@ -18,6 +18,23 @@ TOOL_SCRAPE_JOB = {
     }
 }
 
+# WHY a separate search tool? Scraping handles a KNOWN URL.
+# Search handles a QUERY and returns a list of discovered jobs.
+# These are fundamentally different operations.
+TOOL_SEARCH_JOBS = {
+    "name": "search_jobs",
+    "description": "Search the web for job postings matching a query. Returns titles, URLs, and previews. Use when the user wants to discover jobs instead of providing a specific URL.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Job title, skills, or keywords (e.g. 'Python AI engineer')"},
+            "location": {"type": "string", "description": "Optional location filter (e.g. 'London', 'remote')"},
+            "max_results": {"type": "integer", "description": "Number of results (default 10, max 20)"}
+        },
+        "required": ["query"]
+    }
+}
+
 # ---------------------------------------------------------------------------
 # Research Agent Tools — company research and candidate fit analysis
 # ---------------------------------------------------------------------------
@@ -156,8 +173,10 @@ TOOL_LOG_APPLICATION = {
 }
 
 # Master list in pipeline execution order: scout → research → write → review → apply
+# 10 tools total across 5 agents
 ALL_TOOLS = [
-    TOOL_SCRAPE_JOB, TOOL_RESEARCH_COMPANY, TOOL_ANALYZE_ROLE_FIT,
-    TOOL_TAILOR_CV, TOOL_WRITE_COVER_LETTER, TOOL_WRITE_DM,
-    TOOL_REVIEW_APPLICATION, TOOL_SCORE_QUALITY, TOOL_LOG_APPLICATION
+    TOOL_SCRAPE_JOB, TOOL_SEARCH_JOBS, TOOL_RESEARCH_COMPANY,
+    TOOL_ANALYZE_ROLE_FIT, TOOL_TAILOR_CV, TOOL_WRITE_COVER_LETTER,
+    TOOL_WRITE_DM, TOOL_REVIEW_APPLICATION, TOOL_SCORE_QUALITY,
+    TOOL_LOG_APPLICATION,
 ]

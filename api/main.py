@@ -27,6 +27,7 @@ from dotenv import load_dotenv
 from api.auth import AuthUser, verify_user
 from api.routes_auth import router as auth_router
 from api.routes_admin import router as admin_router
+from api.routes_jobs import router as jobs_router
 
 load_dotenv()
 
@@ -44,6 +45,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 # Register route modules
 app.include_router(auth_router)
 app.include_router(admin_router)
+app.include_router(jobs_router)
 
 
 class RunRequest(BaseModel):

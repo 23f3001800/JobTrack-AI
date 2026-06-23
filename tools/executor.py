@@ -1,6 +1,7 @@
 import os
 from langsmith import traceable
 from tools.scraper import scrape_job_url as _scrape_real
+from tools.searcher import search_jobs as _search_real
 from tools.researcher import research_company as _research_real
 from tools.researcher import analyze_role_fit as _role_fit_real
 from tools.cv_processor import tailor_cv_bullets as _tailor_real
@@ -23,6 +24,7 @@ def execute_tool(name: str, args: dict) -> str:
     # Order mirrors the pipeline: scout → research → write → review → apply.
     handlers = {
         "scrape_job_url":      _scrape_job_url,
+        "search_jobs":         _search_jobs,
         "research_company":    _research_company,
         "analyze_role_fit":    _analyze_role_fit,
         "tailor_cv_bullets":   _tailor_cv_bullets,
@@ -48,6 +50,10 @@ def execute_tool(name: str, args: dict) -> str:
 
 def _scrape_job_url(url: str) -> str:
     return _scrape_real(url)
+
+def _search_jobs(query: str, location: str = "", max_results: int = 10) -> str:
+    """Search for job postings matching a query."""
+    return _search_real(query, location, max_results)
 
 def _research_company(company_name: str, job_title: str = "") -> str:
     return _research_real(company_name, job_title)
