@@ -72,11 +72,72 @@ export default function DashboardPage() {
             <div className="stat-label">Interviews</div>
           </div>
           <div className="stat-card glass-card">
-            <div className="stat-value">{statusCounts["offer"] || 0}</div>
-            <div className="stat-label">Offers</div>
+            <div className="stat-value">
+              {totalApps > 0
+                ? `${Math.round(((statusCounts["interview"] || 0) + (statusCounts["offer"] || 0)) / totalApps * 100)}%`
+                : "—"}
+            </div>
+            <div className="stat-label">Response Rate</div>
           </div>
         </div>
       )}
+
+      {/* Quick actions */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+          gap: "var(--space-md)",
+          marginTop: "var(--space-md)",
+          marginBottom: "var(--space-md)",
+        }}
+      >
+        <a href="/dashboard/new" className="glass-card" style={{
+          padding: "var(--space-lg)",
+          textDecoration: "none",
+          color: "inherit",
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--space-sm)",
+          transition: "transform 0.2s",
+        }}>
+          <span style={{ fontSize: "1.5rem" }}>🚀</span>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>New Application</div>
+            <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>Run agent on a job URL</div>
+          </div>
+        </a>
+        <a href="/dashboard/search" className="glass-card" style={{
+          padding: "var(--space-lg)",
+          textDecoration: "none",
+          color: "inherit",
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--space-sm)",
+          transition: "transform 0.2s",
+        }}>
+          <span style={{ fontSize: "1.5rem" }}>🔍</span>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>Search Jobs</div>
+            <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>Discover new opportunities</div>
+          </div>
+        </a>
+        <a href="/dashboard/tracker" className="glass-card" style={{
+          padding: "var(--space-lg)",
+          textDecoration: "none",
+          color: "inherit",
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--space-sm)",
+          transition: "transform 0.2s",
+        }}>
+          <span style={{ fontSize: "1.5rem" }}>📋</span>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>View Tracker</div>
+            <div style={{ fontSize: "0.75rem", color: "var(--text-tertiary)" }}>Manage all applications</div>
+          </div>
+        </a>
+      </div>
 
       {/* Recent applications table */}
       <div className="glass-card" style={{ padding: "var(--space-lg)", marginTop: "var(--space-md)" }}>

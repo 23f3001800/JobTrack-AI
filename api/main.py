@@ -234,8 +234,37 @@ async def download_file(filename: str, user: AuthUser = Depends(verify_user)):
     return FileResponse(filepath, filename=filename)
 
 
+class InterviewPrepRequest(BaseModel):
+    job_analysis: str = Field(..., description="Job posting analysis")
+    company_profile: str = Field("", description="Company research")
+    role_fit: str = Field("", description="Role fit analysis")
+
+
+@app.post("/interview-prep", tags=["tools"])
+async def interview_prep(
+    body: InterviewPrepRequest,
+    user: AuthUser = Depends(verify_user),
+):
+    """Generate tailored interview questions for a job application.
+
+    WHY a separate endpoint instead of adding to the pipeline?
+    Interview prep is a post-application activity. Not every user
+    wants it automatically — some prefer to prep only for roles
+    where they get a callback.
+    """
+    from tools.interview_prep import generate_interview_prep
+
+    prep = generate_interview_prep(
+        job_analysis=body.job_analysis,
+        company_profile=body.company_profile,
+        role_fit=body.role_fit,
+    )
+    return {"prep": prep}
+
+
 @app.get("/health")
 def health():
     """Health check endpoint — no auth required."""
-    return {"status": "ok", "mcp_tools": 5, "version": "3.0.0",
-            "agents": ["scout", "research", "writer", "quality", "applier"]}
+    return {"status": "ok", "mcp_tools": 7, "version": "3.1.0",
+            "agents": ["scout", "research", "writer", "quality", "applier"],
+            "tools": 11, "tests": 20}
