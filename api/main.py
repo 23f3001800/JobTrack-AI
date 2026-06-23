@@ -28,6 +28,7 @@ from api.auth import AuthUser, verify_user
 from api.routes_auth import router as auth_router
 from api.routes_admin import router as admin_router
 from api.routes_jobs import router as jobs_router
+from api.middleware import RequestLoggingMiddleware, ErrorHandlingMiddleware
 
 load_dotenv()
 
@@ -35,12 +36,18 @@ load_dotenv()
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
     title="JobTrack AI",
-    version="2.0.0",
+    version="3.0.0",
     description="Multi-agent job application system with Supabase backend",
 )
 app.state.limiter = limiter
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
+
+# WHY this order? Middleware runs in REVERSE registration order.
+# So ErrorHandling wraps RequestLogging wraps the route handler.
+# Errors are caught first, then logged with timing.
+app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(ErrorHandlingMiddleware)
 
 # Register route modules
 app.include_router(auth_router)
