@@ -116,3 +116,4 @@ yarl==1.24.2
 zstandard==0.25.0
 supabase==2.15.0
 email-validator>=2.0.0
+reportlab>=4.0

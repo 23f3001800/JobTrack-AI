@@ -32,6 +32,7 @@ STUB_OUTPUTS = {
     "review_application": "APPROVED — Cover letter is well-personalised with specific company references.",
     "score_quality":      '{"overall": 4, "is_personalised": true, "role_matched": true, "professional_tone": true, "reasoning": "Good quality"}',
     "log_application":    "Logged application to TechCorp — files in ./workspace/",
+    "generate_resume_pdf": "PDF resume generated: ./workspace/Resume_TechCorp_AI_Engineer.pdf",
 }
 
 

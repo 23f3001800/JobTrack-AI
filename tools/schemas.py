@@ -172,11 +172,35 @@ TOOL_LOG_APPLICATION = {
     }
 }
 
+# WHY a separate PDF tool instead of generating in log_application?
+# PDF generation can fail (missing fonts, disk full, etc.) without
+# affecting the rest of the pipeline. Keeping it separate means the
+# application is still logged even if PDF generation fails.
+TOOL_GENERATE_PDF = {
+    "name": "generate_resume_pdf",
+    "description": "Generate a tailored PDF resume for this job application. Call AFTER tailored bullets are ready. Returns the file path of the generated PDF.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Candidate's full name"},
+            "email": {"type": "string", "description": "Contact email"},
+            "phone": {"type": "string", "description": "Contact phone"},
+            "background": {"type": "string", "description": "General background summary"},
+            "tailored_bullets": {"type": "string", "description": "Job-specific CV bullets"},
+            "job_title": {"type": "string", "description": "Target job title"},
+            "company": {"type": "string", "description": "Target company name"},
+            "role_fit": {"type": "string", "description": "Role fit analysis (optional)"}
+        },
+        "required": ["name", "tailored_bullets", "job_title", "company"]
+    }
+}
+
 # Master list in pipeline execution order: scout → research → write → review → apply
-# 10 tools total across 5 agents
+# 11 tools total across 5 agents
 ALL_TOOLS = [
     TOOL_SCRAPE_JOB, TOOL_SEARCH_JOBS, TOOL_RESEARCH_COMPANY,
     TOOL_ANALYZE_ROLE_FIT, TOOL_TAILOR_CV, TOOL_WRITE_COVER_LETTER,
     TOOL_WRITE_DM, TOOL_REVIEW_APPLICATION, TOOL_SCORE_QUALITY,
-    TOOL_LOG_APPLICATION,
+    TOOL_LOG_APPLICATION, TOOL_GENERATE_PDF,
 ]
+

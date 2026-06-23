@@ -175,8 +175,60 @@ async def update_status(app_id: str, status: str,
     return {"message": "Status updated", "application": updated}
 
 
+@app.post("/generate-pdf", tags=["pdf"])
+async def generate_pdf(
+    name: str, job_title: str, company: str,
+    tailored_bullets: str, email: str = "", phone: str = "",
+    background: str = "", role_fit: str = "",
+    user: AuthUser = Depends(verify_user),
+):
+    """Generate a tailored PDF resume on demand.
+
+    WHY a separate endpoint instead of always generating in the pipeline?
+    Users may want to regenerate a PDF after editing their bullets,
+    or generate a PDF for an application they created manually.
+    """
+    import os
+    from tools.pdf_generator import generate_resume_pdf
+
+    workspace = os.getenv("WORKSPACE_DIR", "./workspace")
+    filepath = generate_resume_pdf(
+        name=name, email=email, phone=phone, background=background,
+        tailored_bullets=tailored_bullets, job_title=job_title,
+        company=company, role_fit=role_fit, output_dir=workspace,
+    )
+    return {"message": "PDF generated", "filepath": filepath}
+
+
+@app.get("/download/{filename}", tags=["pdf"])
+async def download_file(filename: str, user: AuthUser = Depends(verify_user)):
+    """Download a generated file (PDF, cover letter, etc.) from workspace/.
+
+    WHY validate the filename?
+    Prevent path traversal attacks — users could try to access
+    ../../../etc/passwd. We only serve files from the workspace directory.
+    """
+    import os
+    from fastapi.responses import FileResponse
+    from fastapi import HTTPException
+
+    workspace = os.getenv("WORKSPACE_DIR", "./workspace")
+    filepath = os.path.join(workspace, filename)
+
+    # Security: ensure the resolved path is inside workspace
+    real_workspace = os.path.realpath(workspace)
+    real_filepath = os.path.realpath(filepath)
+    if not real_filepath.startswith(real_workspace):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return FileResponse(filepath, filename=filename)
+
+
 @app.get("/health")
 def health():
     """Health check endpoint — no auth required."""
-    return {"status": "ok", "mcp_tools": 4, "version": "2.0.0",
+    return {"status": "ok", "mcp_tools": 5, "version": "3.0.0",
             "agents": ["scout", "research", "writer", "quality", "applier"]}

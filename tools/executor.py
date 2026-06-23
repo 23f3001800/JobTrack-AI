@@ -8,6 +8,7 @@ from tools.cv_processor import tailor_cv_bullets as _tailor_real
 from tools.cv_processor import write_cover_letter as _letter_real
 from tools.quality import review_application as _review_real
 from tools.quality import score_quality as _score_real
+from tools.pdf_generator import generate_resume_pdf as _pdf_real
 
 
 WORKSPACE = os.getenv("WORKSPACE_DIR", "./workspace")
@@ -33,6 +34,7 @@ def execute_tool(name: str, args: dict) -> str:
         "review_application":  _review_application,
         "score_quality":       _score_quality,
         "log_application":     _log_application,
+        "generate_resume_pdf": _generate_resume_pdf,
     }
     handler = handlers.get(name)
     if not handler:
@@ -137,3 +139,16 @@ def _log_application(company: str, job_title: str,
 
     return f"Logged application to {company}"
 
+
+def _generate_resume_pdf(
+    name: str, tailored_bullets: str, job_title: str, company: str,
+    email: str = "", phone: str = "", background: str = "",
+    role_fit: str = "",
+) -> str:
+    """Generate a tailored PDF resume and return the file path."""
+    filepath = _pdf_real(
+        name=name, email=email, phone=phone, background=background,
+        tailored_bullets=tailored_bullets, job_title=job_title,
+        company=company, role_fit=role_fit, output_dir=WORKSPACE,
+    )
+    return f"PDF resume generated: {filepath}"
