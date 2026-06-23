@@ -48,10 +48,23 @@ jobs:
       - name: Build Docker image
         run: docker build -t jobtrack-ai:${{ github.sha }} .
 
+      - name: Verify Railway token is set
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          if [ -z "$RAILWAY_API_TOKEN" ]; then
+            echo "❌ RAILWAY_TOKEN secret is missing"
+            exit 1
+          else
+            echo "✅ RAILWAY_TOKEN is present"
+          fi
+
       - name: Deploy to Railway
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
           npm i -g @railway/cli
+          railway --version
           railway up --service jobtrack-api --detach
