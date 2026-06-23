@@ -1,19 +1,54 @@
+# ============================================================
+# JobTrack AI — Docker Compose (Full Stack)
+# ============================================================
+# Runs both the FastAPI backend and Next.js dashboard.
+#
+# Usage:
+#   docker compose up --build          # Build and run
+#   docker compose up -d               # Detached mode
+#   docker compose logs -f api         # Follow API logs
+#
+# WHY two services instead of one?
+# Docker best practice: one process per container.
+# This lets you scale, restart, and monitor each independently.
+# ============================================================
+
 services:
-  jobtrack:
+  # ── FastAPI Backend ──
+  api:
     build: .
     ports:
-      - "8001:8001"
+      - "8000:8000"
+    env_file:
+      - .env
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - API_KEY=${API_KEY:-dev-key}
-      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
-      - LANGCHAIN_TRACING_V2=true
-      - LANGCHAIN_PROJECT=jobtrack-ai
       - WORKSPACE_DIR=/app/workspace
     volumes:
-      # WHY mount workspace as a volume?
-      # Container filesystem is ephemeral — it vanishes on restart.
-      # A volume persists output files (cover letters, tracker.json)
-      # between container restarts. Your work isn't lost.
-      - ./workspace:/app/workspace
+      # Persist workspace files (PDFs, cover letters) across restarts
+      - workspace_data:/app/workspace
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ── Next.js Dashboard ──
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /app/dashboard
+    command: ["npx", "next", "start", "-p", "3000"]
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  workspace_data:

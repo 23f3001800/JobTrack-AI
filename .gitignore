@@ -1,6 +1,26 @@
+# ── Python ──
 .env
 venv/
 .venv/
 __pycache__/
 *.pyc
 *.pyo
+.pytest_cache/
+.ruff_cache/
+
+# ── Node / Dashboard ──
+dashboard/node_modules/
+dashboard/.next/
+dashboard/out/
+
+# ── Generated files ──
+workspace/
+*.pdf
+
+# ── IDE ──
+.vscode/
+.idea/
+
+# ── OS ──
+.DS_Store
+Thumbs.db
