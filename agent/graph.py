@@ -1,163 +1,170 @@
-import os
-from typing import TypedDict, Annotated
+"""Multi-agent LangGraph for JobTrack AI.
+
+Architecture:
+    Supervisor (deterministic router)
+        ├── Scout Agent      → scrape job URL
+        ├── Research Agent   → company research + role fit
+        ├── Writer Agent     → cover letter, CV bullets, DM
+        ├── Quality Agent    → review + score (rewrite loop)
+        └── Apply Agent      → log application
+
+The supervisor checks state after each agent completes and routes
+to the next agent. The Writer ↔ Quality loop runs up to 2 times
+to improve output quality before proceeding to Apply.
+
+WHY LangGraph instead of a simple for-loop?
+1. Checkpointing: Resume from any step on failure
+2. Streaming: Frontend gets step-by-step progress updates
+3. Conditional edges: Quality loop requires dynamic routing
+4. Tracing: LangSmith traces each agent as a separate span
+5. Future: Parallel execution (Scout + Research) via fan-out
+"""
 import operator
-from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
-from anthropic import Anthropic
-from tools.schemas import ALL_TOOLS
-from tools.executor import execute_tool
-from langsmith import traceable, get_current_run_tree
+import os
+from typing import Annotated, TypedDict
+
 from dotenv import load_dotenv
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, StateGraph
+
+# Import sub-agent runners
+from agent.agents.applier import run_applier
+from agent.agents.quality import run_quality
+from agent.agents.research import run_research
+from agent.agents.scout import run_scout
+from agent.agents.supervisor import route_next_agent
+from agent.agents.writer import run_writer
+
 load_dotenv()
 
 if os.getenv("LANGCHAIN_TRACING_V2") == "true":
     os.environ.setdefault("LANGCHAIN_PROJECT", "jobtrack-ai")
 
+
 class JobState(TypedDict):
-    job_url:          str
-    user_background:  str
-    job_analysis:     str   # populated by step 1
-    company_profile:  str   # populated by step 2
-    tailored_bullets: str   # populated by step 3
-    cover_letter:     str   # populated by step 4
-    outreach_dm:      str   # populated by step 5
-    log_result:       str   # populated by step 6
-    messages: Annotated[list, operator.add]  # full message history
-    iterations: int
+    """Shared state across all agents in the multi-agent system.
 
-client = Anthropic()
+    WHY TypedDict instead of a Pydantic model?
+    LangGraph requires TypedDict for state — it uses the type hints
+    to validate state transitions and generate the state schema.
 
-ORCHESTRATOR_SYSTEM = """You are JobTrack AI — a job application orchestrator.
-You have 6 tools. Call them in ORDER, one at a time:
-1. scrape_job_url → get job details
-2. research_company → build company profile  
-3. tailor_cv_bullets → personalise CV
-4. write_cover_letter → draft cover letter
-5. write_outreach_dm → draft LinkedIn DM
-6. log_application → save everything (IMPORTANT: pass ALL outputs from previous steps including job_analysis, company_profile, tailored_bullets, cover_letter, and outreach_dm)
+    Fields are grouped by which agent populates them.
+    """
 
-Check which steps are already done in the user message before deciding which tool to call next.
-Never call a step that is already marked complete."""
+    # --- Input (provided by user) ---
+    job_url: str  # The job posting URL to process
+    user_background: str  # User's background/experience summary
 
-@traceable(name="orchestrator-node", tags=["agent"])
-def orchestrator(state: JobState) -> dict:
-    """LLM decides which tool to call next based on what's done."""
-    # Build status message so LLM knows what's done
-    # WHY pass status explicitly? Without it, the LLM might
-    # re-run completed steps (wasting money and time).
-    status = f"""
-Job URL: {state['job_url']}
-Background: {state['user_background']}
+    # --- Scout Agent outputs ---
+    job_analysis: str  # Structured job details (title, requirements, etc.)
 
-Steps completed:
-- Step 1 (scrape): {'DONE' if state.get('job_analysis') else 'PENDING'}
-- Step 2 (research): {'DONE' if state.get('company_profile') else 'PENDING'}
-- Step 3 (tailor CV): {'DONE' if state.get('tailored_bullets') else 'PENDING'}
-- Step 4 (cover letter): {'DONE' if state.get('cover_letter') else 'PENDING'}
-- Step 5 (DM): {'DONE' if state.get('outreach_dm') else 'PENDING'}
-- Step 6 (log): {'DONE' if state.get('log_result') else 'PENDING'}
+    # --- Research Agent outputs ---
+    company_profile: str  # Company info (product, culture, tech stack)
+    role_fit: str  # Fit analysis (score, matching skills, gaps)
 
-Call the next PENDING step now."""
+    # --- Writer Agent outputs ---
+    tailored_bullets: str  # CV bullets rewritten for this specific role
+    cover_letter: str  # Personalised 3-paragraph cover letter
+    outreach_dm: str  # LinkedIn cold DM
 
-    messages = state.get("messages", [])
-    messages = messages + [{"role": "user", "content": status}]
+    # --- Quality Agent outputs ---
+    quality_score: int  # 1-5 quality rating
+    quality_feedback: str  # Detailed feedback for rewrite (empty if approved)
+    quality_attempts: int  # Number of quality review cycles completed
 
-    run = get_current_run_tree()
-    resp = client.messages.create(
-        model="claude-sonnet-4-6", max_tokens=1024,
-        system=ORCHESTRATOR_SYSTEM,
-        tools=ALL_TOOLS, messages=messages
-    )
+    # --- Apply Agent outputs ---
+    log_result: str  # Confirmation that application was logged
 
-    if run:
-        run.add_metadata({
-            "input_tokens":  resp.usage.input_tokens,
-            "output_tokens": resp.usage.output_tokens,
-            "cost_usd": resp.usage.input_tokens * 0.000003
-                        + resp.usage.output_tokens * 0.000015,
-            "iteration": state.get("iterations", 0)
-        })
-
-    return {"messages": [{"role": "assistant", "content": resp.content}],
-            "iterations": state.get("iterations", 0) + 1}
+    # --- Orchestration ---
+    messages: Annotated[list, operator.add]  # Message history for tracing/streaming
+    iterations: int  # Safety counter to prevent infinite loops
 
 
-def tool_executor(state: JobState) -> dict:
-    """Execute all tool_use blocks from the last assistant message."""
-    last = state["messages"][-1]
-    tool_results = []
-    updates = {}
+# ──────────────────────────────────────────────
+# Build the multi-agent graph
+# ──────────────────────────────────────────────
 
-    for block in last["content"]:
-        if not hasattr(block, "type") or block.type != "tool_use":
-            continue
-        print(f"  → Executing: {block.name}")
-        result = execute_tool(block.name, block.input)
-
-        # This is how upstream nodes (the LLM) know what's done.
-        # When the orchestrator sees state['job_analysis'] is set,
-        # it knows to skip step 1 and call step 2 instead.
-        field_map = {
-            "scrape_job_url":     "job_analysis",
-            "research_company":   "company_profile",
-            "tailor_cv_bullets":  "tailored_bullets",
-            "write_cover_letter": "cover_letter",
-            "write_outreach_dm":  "outreach_dm",
-            "log_application":    "log_result",
-        }
-        if block.name in field_map:
-            updates[field_map[block.name]] = result
-
-        tool_results.append({
-            "type": "tool_result",
-            "tool_use_id": block.id,
-            "content": result
-        })
-    return {**updates,
-            "messages": [{"role": "user", "content": tool_results}]}
-
-def should_continue(state: JobState) -> str:
-    # All 6 steps done?
-    all_done = all([
-        state.get("job_analysis"), state.get("company_profile"),
-        state.get("tailored_bullets"), state.get("cover_letter"),
-        state.get("outreach_dm"), state.get("log_result")
-    ])
-    if all_done or state.get("iterations", 0) >= 10:
-        return "end"
-    last = state["messages"][-1]
-    has_tools = any(
-        hasattr(b, "type") and b.type == "tool_use"
-        for b in last.get("content", [])
-    )
-    return "tools" if has_tools else "end"
-
-# Build the graph
 builder = StateGraph(JobState)
-builder.add_node("orchestrator", orchestrator)
-builder.add_node("tools", tool_executor)
-builder.set_entry_point("orchestrator")
-builder.add_conditional_edges("orchestrator", should_continue,
-                               {"tools": "tools", "end": END})
-builder.add_edge("tools", "orchestrator")
 
+# Register each sub-agent as a node.
+# WHY separate nodes per agent? Each node appears as a distinct step
+# in LangSmith traces and in the streaming API response, giving the
+# frontend real-time progress updates ("Researching company...")
+builder.add_node("scout", run_scout)
+builder.add_node("research", run_research)
+builder.add_node("writer", run_writer)
+builder.add_node("quality", run_quality)
+builder.add_node("applier", run_applier)
 
-# you can resume from step 4 using the same thread_id.
-# In production this would be a PostgresSaver instead.
+# Entry point: always start with scout (scrape the job first).
+builder.set_entry_point("scout")
+
+# After each agent, the supervisor routes to the next one.
+# WHY not set_entry_point("supervisor")?
+# The supervisor is a pure function, not a node. It runs as
+# a conditional edge function — more efficient than a separate node
+# that would consume a LangGraph step without doing useful work.
+_routing_map = {
+    "scout": "scout",
+    "research": "research",
+    "writer": "writer",
+    "quality": "quality",
+    "applier": "applier",
+    "end": END,
+}
+
+for agent_name in ["scout", "research", "writer", "quality", "applier"]:
+    builder.add_conditional_edges(agent_name, route_next_agent, _routing_map)
+
+# Checkpointing: MemorySaver for development.
+# WHY not PostgresSaver? We'll add Supabase-backed checkpointing
+# in Phase 2 when the database is set up. MemorySaver works for
+# single-process development but loses state on restart.
 checkpointer = MemorySaver()
 app = builder.compile(checkpointer=checkpointer)
 
+
 def run(job_url: str, user_background: str) -> dict:
-    thread_id = job_url.split("/")[-1]  # unique per job URL
+    """Run the full multi-agent pipeline on a job URL.
+
+    Args:
+        job_url: The job posting URL to process.
+        user_background: The user's experience/skills summary.
+
+    Returns:
+        Dict with status, cover_letter, outreach_dm, tailored_bullets,
+        quality_score, and role_fit analysis.
+    """
+    # WHY use URL slug as thread_id? Ensures that re-running the same
+    # URL resumes from the last checkpoint instead of starting over.
+    # This saves money on retries after transient failures.
+    thread_id = job_url.split("/")[-1]
+
     initial = JobState(
-        job_url=job_url, user_background=user_background,
-        job_analysis="", company_profile="", tailored_bullets="",
-        cover_letter="", outreach_dm="", log_result="",
-        messages=[], iterations=0
+        job_url=job_url,
+        user_background=user_background,
+        job_analysis="",
+        company_profile="",
+        role_fit="",
+        tailored_bullets="",
+        cover_letter="",
+        outreach_dm="",
+        quality_score=0,
+        quality_feedback="",
+        quality_attempts=0,
+        log_result="",
+        messages=[],
+        iterations=0,
     )
+
     config = {"configurable": {"thread_id": thread_id}}
     final = app.invoke(initial, config=config)
-    return {"status": "complete",
-            "cover_letter": final.get("cover_letter"),
-            "outreach_dm": final.get("outreach_dm"),
-            "tailored_bullets": final.get("tailored_bullets")}
+
+    return {
+        "status": "complete",
+        "cover_letter": final.get("cover_letter"),
+        "outreach_dm": final.get("outreach_dm"),
+        "tailored_bullets": final.get("tailored_bullets"),
+        "quality_score": final.get("quality_score"),
+        "role_fit": final.get("role_fit"),
+    }

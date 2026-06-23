@@ -35,10 +35,14 @@ class RunRequest(BaseModel):
     job_url:         str = Field(..., description="URL of the job posting")
     user_background: str = Field("Python developer", max_length=1000)
 
-# Field names → human-readable step labels for the client UI
+# Field names → human-readable step labels for the client UI.
+# WHY track these? The streaming endpoint compares state snapshots
+# to detect which field just got populated, then sends that label
+# to the frontend for real-time progress updates.
 STEP_LABELS = {
     "job_analysis":     "Job analysis",
     "company_profile":  "Company research",
+    "role_fit":         "Role fit analysis",
     "tailored_bullets": "CV tailoring",
     "cover_letter":     "Cover letter",
     "outreach_dm":      "LinkedIn DM",
@@ -50,11 +54,14 @@ STEP_LABELS = {
 async def run_agent(request: Request, body: RunRequest,
                     _=Depends(verify_key)):
     thread_id = body.job_url.split("/")[-1] + "-" + str(uuid.uuid4())[:4]
+    # Initialize all state fields — new multi-agent fields include
+    # role_fit (Research agent) and quality loop tracking.
     initial = JobState(
         job_url=body.job_url, user_background=body.user_background,
-        job_analysis="", company_profile="", tailored_bullets="",
-        cover_letter="", outreach_dm="", log_result="",
-        messages=[], iterations=0
+        job_analysis="", company_profile="", role_fit="",
+        tailored_bullets="", cover_letter="", outreach_dm="",
+        quality_score=0, quality_feedback="", quality_attempts=0,
+        log_result="", messages=[], iterations=0,
     )
     config = {"configurable": {"thread_id": thread_id}}
     async def stream_steps():
@@ -102,4 +109,5 @@ async def get_tracker(_=Depends(verify_key)):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "mcp_tools": 4, "version": "1.0.0"}
+    return {"status": "ok", "mcp_tools": 4, "version": "2.0.0",
+            "agents": ["scout", "research", "writer", "quality", "applier"]}

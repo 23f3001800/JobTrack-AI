@@ -4,8 +4,11 @@ from datetime import datetime
 from langsmith import traceable
 from tools.scraper import scrape_job_url as _scrape_real
 from tools.researcher import research_company as _research_real
+from tools.researcher import analyze_role_fit as _role_fit_real
 from tools.cv_processor import tailor_cv_bullets as _tailor_real
 from tools.cv_processor import write_cover_letter as _letter_real
+from tools.quality import review_application as _review_real
+from tools.quality import score_quality as _score_real
 
 
 WORKSPACE = os.getenv("WORKSPACE_DIR", "./workspace")
@@ -18,12 +21,17 @@ def execute_tool(name: str, args: dict) -> str:
         run.add_metadata({"tool_name": name, "tool_args": list(args.keys())})
 
     """Dispatch tool call to correct handler."""
+    # Dispatch table — maps tool names from schemas.py to handler functions.
+    # Order mirrors the pipeline: scout → research → write → review → apply.
     handlers = {
         "scrape_job_url":      _scrape_job_url,
         "research_company":    _research_company,
+        "analyze_role_fit":    _analyze_role_fit,
         "tailor_cv_bullets":   _tailor_cv_bullets,
         "write_cover_letter":  _write_cover_letter,
         "write_outreach_dm":   _write_outreach_dm,
+        "review_application":  _review_application,
+        "score_quality":       _score_quality,
         "log_application":     _log_application,
     }
     handler = handlers.get(name)
@@ -45,6 +53,11 @@ def _scrape_job_url(url: str) -> str:
 
 def _research_company(company_name: str, job_title: str = "") -> str:
     return _research_real(company_name, job_title)
+
+
+def _analyze_role_fit(job_analysis: str, user_background: str) -> str:
+    """Assess candidate-job fit before the Writer agent starts."""
+    return _role_fit_real(job_analysis, user_background)
 
 def _tailor_cv_bullets(job_requirements: str, company_profile: str) -> str:
     return _tailor_real(job_requirements, company_profile)
@@ -73,6 +86,24 @@ Under 100 words. Not salesy. Sound like a curious engineer, not a job beggar.
 Company profile: {company_profile[:300]}"""}]
     )
     return resp.content[0].text
+
+
+# --- Quality Agent wrappers ---
+# WHY thin wrappers instead of calling quality.py directly from handlers dict?
+# Consistency with the existing pattern lets LangSmith tracing and error
+# handling in execute_tool treat every tool identically. Also leaves room
+# for adding executor-level caching or retries per-tool later.
+
+def _review_application(job_analysis: str, company_profile: str,
+                        cover_letter: str, tailored_bullets: str) -> str:
+    """Get prose feedback on application materials for the rewrite loop."""
+    return _review_real(job_analysis, company_profile, cover_letter, tailored_bullets)
+
+
+def _score_quality(job_analysis: str, company_profile: str,
+                   cover_letter: str, tailored_bullets: str) -> str:
+    """Get structured JSON quality score for programmatic gates."""
+    return _score_real(job_analysis, company_profile, cover_letter, tailored_bullets)
 
 
 
