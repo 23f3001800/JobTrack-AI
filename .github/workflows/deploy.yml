@@ -1,4 +1,21 @@
+# ============================================================
+# JobTrack AI — CI/CD Pipeline
+# ============================================================
+# Runs on every push and PR to main:
+# 1. Lint (ruff) — catches style and import errors
+# 2. Tests (pytest) — 8 tests: 4 graph + 4 eval
+# 3. Dashboard build (Next.js) — type-checks and compiles
+# 4. Docker build — verifies production image builds
+# 5. Eval gate (push only) — runs LLM-as-judge on real outputs
+#
+# WHY separate CI and eval?
+# CI runs on every push/PR and should be fast (<3min).
+# Evals cost money (LLM API calls) and are slower, so they
+# only run on push to main.
+# ============================================================
+
 name: CI/CD — JobTrack AI
+
 on:
   push:
     branches: [main]
@@ -6,49 +23,87 @@ on:
     branches: [main]
 
 jobs:
+  # ── Job 1: Backend CI ──
   ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: "3.11", cache: pip}
+        with: { python-version: "3.11", cache: pip }
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      # WHY install Playwright here too?
-      # tests/test_graph.py imports from agent/graph.py which
-      # imports tools/scraper.py which imports playwright.
-      # Without installing chromium, the import itself fails.
-      # We install chromium but tests mock the browser calls —
-      # no actual browser launches in unit tests.
+      # WHY install Playwright in CI?
+      # The import chain: agent/graph.py → tools/scraper.py → playwright
+      # Without chromium installed, the import itself fails.
+      # Tests mock all browser calls — no actual browser launches.
       - name: Install Playwright browser
         run: playwright install chromium --with-deps
 
-      - name: Lint
-        run: ruff check .
+      - name: Lint (ruff)
+        run: ruff check . --exclude dashboard --exclude venv
 
-      - name: Run tests
+      - name: Run tests (8 tests)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           API_KEY: ci-test-key
           LANGCHAIN_TRACING_V2: "false"
         run: pytest tests/ -v --tb=short
 
-      # Eval gate: only on push to main (runs real agent = costs money)
-      - name: Eval gate
-        if: github.event_name == 'push'
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          LANGCHAIN_API_KEY: ${{ secrets.LANGCHAIN_API_KEY }}
-          LANGCHAIN_TRACING_V2: "true"
-        run: python tests/run_evals.py
+  # ── Job 2: Dashboard Build ──
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "18", cache: npm, cache-dependency-path: dashboard/package-lock.json }
 
+      - name: Install dashboard dependencies
+        working-directory: dashboard
+        run: npm ci
+
+      - name: Build dashboard (type-check + compile)
+        working-directory: dashboard
+        run: npm run build
+
+  # ── Job 3: Docker Build ──
+  docker:
+    runs-on: ubuntu-latest
+    needs: [ci, dashboard]
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Build Docker image
         run: docker build -t jobtrack-ai:${{ github.sha }} .
 
-      # Deployment: Railway auto-deploys from main via GitHub integration.
-      # No CLI step needed — Railway watches this repo and deploys
-      # after CI passes. Set up in Railway dashboard:
-      # Project → Settings → Connect GitHub repo → Enable auto-deploy on main.
+  # ── Job 4: Eval Gate (push to main only) ──
+  eval:
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11", cache: pip }
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt && playwright install chromium --with-deps
+
+      # WHY run evals only on main?
+      # Each eval call costs ~$0.02 in Claude API usage.
+      # Running on every PR would be wasteful. On main only,
+      # it acts as a quality gate for deployed code.
+      - name: Run eval framework
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LANGCHAIN_API_KEY: ${{ secrets.LANGCHAIN_API_KEY }}
+          LANGCHAIN_TRACING_V2: "true"
+          LANGCHAIN_PROJECT: jobtrack-ai-eval
+        run: python -m eval.run_eval --source workspace --output eval_output.json
+
+      - name: Upload eval results
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: eval_output.json
