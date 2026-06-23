@@ -1,10 +1,22 @@
+"""FastAPI application — JobTrack AI REST API.
+
+Serves three audiences:
+1. Web dashboard (Next.js frontend) — JWT-authenticated user requests
+2. MCP server (Claude Desktop) — API key-authenticated tool calls
+3. CLI tools and CI/CD — API key-authenticated automation
+
+Architecture:
+- /auth/*   → Signup, login, profile management (routes_auth.py)
+- /admin/*  → System stats, user management (routes_admin.py)
+- /run      → Multi-agent pipeline execution (streaming NDJSON)
+- /tracker  → Application history
+- /health   → Health check
+"""
 import json
-import os
 import uuid
 
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, Depends, Request
 from fastapi.responses import StreamingResponse
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from slowapi import Limiter
@@ -12,22 +24,26 @@ from slowapi.util import get_remote_address
 from agent.graph import app as agent_app, JobState
 from dotenv import load_dotenv
 
+from api.auth import AuthUser, verify_user
+from api.routes_auth import router as auth_router
+from api.routes_admin import router as admin_router
+
 load_dotenv()
 
 
 limiter = Limiter(key_func=get_remote_address)
-app = FastAPI(title="JobTrack AI", version="1.0.0")
+app = FastAPI(
+    title="JobTrack AI",
+    version="2.0.0",
+    description="Multi-agent job application system with Supabase backend",
+)
 app.state.limiter = limiter
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
                    allow_methods=["*"], allow_headers=["*"])
 
-
-security = HTTPBearer()
-
-def verify_key(creds: HTTPAuthorizationCredentials = Depends(security)):
-    if creds.credentials != os.getenv("API_KEY", "dev-key"):
-        raise HTTPException(401, "Invalid API key")
-    return creds.credentials
+# Register route modules
+app.include_router(auth_router)
+app.include_router(admin_router)
 
 
 class RunRequest(BaseModel):
@@ -51,12 +67,29 @@ STEP_LABELS = {
 @app.post("/run", tags=["agent"])
 @limiter.limit("5/minute")   # Each run costs $0.10–0.50 in API calls
 async def run_agent(request: Request, body: RunRequest,
-                    _=Depends(verify_key)):
+                    user: AuthUser = Depends(verify_user)):
+    """Execute the multi-agent pipeline on a job URL.
+
+    Returns a streaming NDJSON response with step-by-step progress.
+    Each line is a JSON object: {"step": "...", "status": "done", "preview": "..."}
+
+    WHY streaming instead of a single response?
+    The pipeline takes 30-60 seconds. Streaming lets the frontend
+    show real-time progress ("Scraping job...", "Researching company...").
+    """
     thread_id = body.job_url.split("/")[-1] + "-" + str(uuid.uuid4())[:4]
+
+    # If user is JWT-authenticated, use their background from profile
+    background = body.user_background
+    if user.is_authenticated and not body.user_background:
+        from db import get_db
+        profile = get_db().get_profile(user.user_id)
+        background = profile.get("background", body.user_background)
+
     # Initialize all state fields — new multi-agent fields include
     # role_fit (Research agent) and quality loop tracking.
     initial = JobState(
-        job_url=body.job_url, user_background=body.user_background,
+        job_url=body.job_url, user_background=background,
         job_analysis="", company_profile="", role_fit="",
         tailored_bullets="", cover_letter="", outreach_dm="",
         quality_score=0, quality_feedback="", quality_attempts=0,
@@ -87,6 +120,7 @@ async def run_agent(request: Request, body: RunRequest,
             yield json.dumps({
                 "step": "complete", "status": "done",
                 "thread_id": thread_id,
+                "user_id": user.user_id,
                 "files": "Check workspace/ directory"
             }) + "\n"
 
@@ -98,20 +132,49 @@ async def run_agent(request: Request, body: RunRequest,
 
 
 @app.get("/tracker", tags=["tracker"])
-async def get_tracker(_=Depends(verify_key)):
-    """Return all tracked job applications.
+async def get_tracker(user: AuthUser = Depends(verify_user)):
+    """Return tracked job applications.
 
-    WHY use db.get_db() instead of reading tracker.json directly?
-    In production, this reads from Supabase PostgreSQL.
-    In local dev, it falls back to reading tracker.json.
-    The API doesn't need to know which backend is active.
+    WHY scope by user? JWT-authenticated users only see their own data.
+    API key users (admin) see everything.
     """
     from db import get_db
     db = get_db()
-    applications = db.get_applications()
+    # JWT users see only their apps; API key users see all
+    user_id = user.user_id if user.is_authenticated else None
+    applications = db.get_applications(user_id=user_id)
     return {"applications": applications, "total": len(applications)}
+
+
+@app.patch("/tracker/{app_id}/status", tags=["tracker"])
+async def update_status(app_id: str, status: str,
+                        user: AuthUser = Depends(verify_user)):
+    """Update an application's status (for Kanban drag-and-drop).
+
+    WHY a separate endpoint instead of a generic PATCH?
+    Status changes are the most common update. A dedicated endpoint
+    means the frontend can fire a simple PATCH with just the new status,
+    and the backend validates the enum value.
+    """
+    valid_statuses = [
+        "saved", "applied", "screening", "interview",
+        "offer", "rejected", "withdrawn",
+    ]
+    if status not in valid_statuses:
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid status. Must be one of: {valid_statuses}",
+        )
+
+    from db import get_db
+    db = get_db()
+    updated = db.update_application_status(app_id, status)
+    return {"message": "Status updated", "application": updated}
+
 
 @app.get("/health")
 def health():
+    """Health check endpoint — no auth required."""
     return {"status": "ok", "mcp_tools": 4, "version": "2.0.0",
             "agents": ["scout", "research", "writer", "quality", "applier"]}

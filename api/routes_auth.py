@@ -1,0 +1,185 @@
+"""Authentication routes — signup proxy, profile management.
+
+WHY proxy Supabase Auth instead of calling it from the frontend directly?
+1. The frontend only talks to OUR API — single point of contact
+2. We can add custom logic (auto-create profile, attach defaults)
+3. Rate limiting is centralized on our server
+4. The service key never leaves the backend
+
+The frontend DOES use the Supabase JS client for session management
+(token refresh, password reset). These routes handle the initial
+auth flow and profile CRUD.
+"""
+import os
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, EmailStr, Field
+
+from api.auth import AuthUser, verify_user
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+# ──────────────────────────────────────────────
+# Request/Response schemas
+# ──────────────────────────────────────────────
+
+class SignupRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8, description="Minimum 8 characters")
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class ProfileUpdate(BaseModel):
+    """Fields the user can update on their profile.
+
+    WHY optional fields? The frontend sends only the fields that changed.
+    PATCH semantics — not all fields are required.
+    """
+    full_name: str | None = None
+    background: str | None = None
+    skills: list[str] | None = None
+    cv_text: str | None = None
+
+
+# ──────────────────────────────────────────────
+# Auth endpoints
+# ──────────────────────────────────────────────
+
+@router.post("/signup")
+async def signup(body: SignupRequest):
+    """Create a new user via Supabase Auth.
+
+    WHY not just use the Supabase JS client directly from the frontend?
+    By proxying signup through our API, we can:
+    1. Validate input server-side (email format, password strength)
+    2. The on_auth_user_created trigger auto-creates the profile row
+    3. Return a clean error message instead of Supabase's raw errors
+    """
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
+
+    if not supabase_url or not supabase_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase not configured — signup unavailable in local dev mode",
+        )
+
+    from supabase import create_client
+    client = create_client(supabase_url, supabase_key)
+
+    try:
+        result = client.auth.admin.create_user({
+            "email": body.email,
+            "password": body.password,
+            "email_confirm": True,  # Auto-confirm for dev; disable in prod
+        })
+
+        return {
+            "user_id": result.user.id,
+            "email": result.user.email,
+            "message": "Account created successfully",
+        }
+
+    except Exception as e:
+        error_msg = str(e)
+        if "already registered" in error_msg.lower():
+            raise HTTPException(status_code=409, detail="Email already registered")
+        raise HTTPException(status_code=400, detail=f"Signup failed: {error_msg}")
+
+
+@router.post("/login")
+async def login(body: LoginRequest):
+    """Authenticate user and return JWT tokens.
+
+    Returns access_token (short-lived) and refresh_token (long-lived).
+    The frontend stores these and sends access_token as Bearer token.
+    """
+    supabase_url = os.getenv("SUPABASE_URL")
+    supabase_anon = os.getenv("SUPABASE_ANON_KEY")
+
+    if not supabase_url or not supabase_anon:
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase not configured — login unavailable in local dev mode",
+        )
+
+    from supabase import create_client
+    client = create_client(supabase_url, supabase_anon)
+
+    try:
+        result = client.auth.sign_in_with_password({
+            "email": body.email,
+            "password": body.password,
+        })
+
+        return {
+            "access_token": result.session.access_token,
+            "refresh_token": result.session.refresh_token,
+            "expires_in": result.session.expires_in,
+            "user": {
+                "id": result.user.id,
+                "email": result.user.email,
+            },
+        }
+
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+
+# ──────────────────────────────────────────────
+# Profile endpoints
+# ──────────────────────────────────────────────
+
+@router.get("/profile")
+async def get_profile(user: AuthUser = Depends(verify_user)):
+    """Get the current user's profile.
+
+    WHY require auth? Profile contains private data (background, CV).
+    API key users get a stub profile since they don't have user identity.
+    """
+    from db import get_db
+    db = get_db()
+    profile = db.get_profile(user.user_id)
+
+    if not profile:
+        return {
+            "user_id": user.user_id,
+            "email": user.email,
+            "full_name": "",
+            "background": "",
+            "skills": [],
+            "message": "Profile not yet set up",
+        }
+
+    return profile
+
+
+@router.patch("/profile")
+async def update_profile(body: ProfileUpdate,
+                         user: AuthUser = Depends(verify_user)):
+    """Update the current user's profile fields.
+
+    Only authenticated JWT users can update profiles.
+    API key users get a 403 since they don't have a user identity.
+    """
+    if not user.is_authenticated:
+        raise HTTPException(
+            status_code=403,
+            detail="Profile updates require user authentication (JWT), not API key",
+        )
+
+    # Build update dict with only non-None fields (PATCH semantics)
+    update_data = body.model_dump(exclude_none=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    from db import get_db
+    db = get_db()
+    updated = db.update_profile(user.user_id, update_data)
+
+    return {"message": "Profile updated", "profile": updated}
