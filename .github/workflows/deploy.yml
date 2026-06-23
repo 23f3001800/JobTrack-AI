@@ -48,9 +48,6 @@ jobs:
       - name: Build Docker image
         run: docker build -t jobtrack-ai:${{ github.sha }} .
 
-      - name: Build Docker image
-        run: docker build -t jobtrack-ai:${{ github.sha }} .
-
       - name: Deploy to Railway
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
