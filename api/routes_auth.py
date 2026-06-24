@@ -48,6 +48,8 @@ class ProfileUpdate(BaseModel):
     linkedin_url: str | None = None
     github_url: str | None = None
     default_location: str | None = None
+    parsed_profile: dict | None = None
+    onboarding_complete: bool | None = None
 
 
 # ──────────────────────────────────────────────
@@ -122,6 +124,8 @@ async def signup(body: SignupRequest):
         "linkedin_url": "",
         "github_url": "",
         "default_location": "",
+        "parsed_profile": {},
+        "onboarding_complete": False,
         "created_at": datetime.now().isoformat(),
     }
     users.append(new_user)
@@ -213,13 +217,18 @@ async def login(body: LoginRequest):
 
     for user in users:
         if user["email"] == body.email and user["password_hash"] == password_hash:
-            # WHY use the API_KEY as the token?
-            # In JSON fallback mode, there's no JWT infrastructure.
-            # The API key serves as the auth token — the auth middleware
-            # already accepts API keys as Bearer tokens.
-            api_key = os.getenv("API_KEY", "dev-secret-key")
+            # WHY dev tokens instead of the API key?
+            # Using the API key gave ALL users admin access since
+            # verify_user treats API keys as admin. Dev tokens carry
+            # the user's actual user_id and role, enabling proper RBAC.
+            from api.auth import create_dev_token
+            token = create_dev_token(
+                user_id=user["id"],
+                email=user["email"],
+                role=user.get("role", "user"),
+            )
             return {
-                "access_token": api_key,
+                "access_token": token,
                 "refresh_token": "",
                 "expires_in": 86400,
                 "user": {
@@ -259,6 +268,8 @@ async def get_profile(user: AuthUser = Depends(verify_user)):
             "linkedin_url": "",
             "github_url": "",
             "default_location": "",
+            "parsed_profile": {},
+            "onboarding_complete": False,
             "message": "Profile not yet set up",
         }
 
@@ -352,16 +363,40 @@ async def upload_resume(
             detail="PDF appears to be empty or image-only (no extractable text)",
         )
 
-    # Save extracted text to profile
+    # Parse resume into structured profile data
+    from tools.resume_parser import parse_resume
+    parsed_profile = parse_resume(cv_text)
+
+    # Save extracted text + parsed data to profile
     from db import get_db
     db = get_db()
     db.update_profile(user.user_id, {
         "cv_text": cv_text,
+        "parsed_profile": parsed_profile,
     })
 
+    # Auto-fill empty profile fields from parsed data
+    auto_fill = {}
+    profile = db.get_profile(user.user_id) or {}
+    if not profile.get("full_name") and parsed_profile.get("full_name"):
+        auto_fill["full_name"] = parsed_profile["full_name"]
+    if not profile.get("phone") and parsed_profile.get("phone"):
+        auto_fill["phone"] = parsed_profile["phone"]
+    if not profile.get("linkedin_url") and parsed_profile.get("linkedin_url"):
+        auto_fill["linkedin_url"] = parsed_profile["linkedin_url"]
+    if not profile.get("github_url") and parsed_profile.get("github_url"):
+        auto_fill["github_url"] = parsed_profile["github_url"]
+    if not profile.get("skills") and parsed_profile.get("skills"):
+        auto_fill["skills"] = parsed_profile["skills"]
+    if not profile.get("background") and parsed_profile.get("summary"):
+        auto_fill["background"] = parsed_profile["summary"]
+    if auto_fill:
+        db.update_profile(user.user_id, auto_fill)
+
     return {
-        "message": "Resume uploaded and text extracted",
+        "message": "Resume uploaded, text extracted, and profile parsed",
         "cv_text": cv_text,
+        "parsed_profile": parsed_profile,
         "file_path": str(resume_path),
         "pages": len(cv_text.split("\n\n")),
     }

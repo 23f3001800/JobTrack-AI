@@ -32,11 +32,18 @@ def run_applier(state: dict) -> dict:
         {
             "company": company_name or "Unknown Company",
             "job_title": job_title or "Unknown Role",
+            "job_url": state.get("job_url", ""),
             "cover_letter": state.get("cover_letter", ""),
             "tailored_bullets": state.get("tailored_bullets", ""),
             "outreach_dm": state.get("outreach_dm", ""),
             "job_analysis": job_analysis,
             "company_profile": company_profile,
+            "role_fit": state.get("role_fit", ""),
+            "quality_score": state.get("quality_score", 0),
+            "quality_feedback": state.get("quality_feedback", ""),
+            "resume_pdf_url": state.get("resume_pdf_url", ""),
+            "user_id": state.get("user_id", ""),
+            "status": "draft",  # Human-in-the-loop: start as draft
         },
     )
 

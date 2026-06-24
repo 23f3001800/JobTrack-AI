@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { getCurrentUser } from "@/lib/api";
 
 /**
  * Admin Dashboard — system-wide stats and user management.
@@ -10,7 +12,7 @@ import { useState, useEffect } from "react";
  * system-wide metrics: total users, total applications, quality
  * distribution, and recent activity across all users.
  *
- * Only accessible to admin users (role check on the backend).
+ * Only accessible to admin users (role check on frontend + backend).
  */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -30,11 +32,20 @@ interface AdminStats {
 }
 
 export default function AdminPage() {
+  const router = useRouter();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    // Frontend role guard — redirect non-admins immediately
+    const user = getCurrentUser();
+    if (!user || user.role !== "admin") {
+      setError("Access denied — admin role required");
+      setLoading(false);
+      return;
+    }
+
     const fetchStats = async () => {
       try {
         const token = localStorage.getItem("jt_access_token") || "";
@@ -55,7 +66,7 @@ export default function AdminPage() {
       }
     };
     fetchStats();
-  }, []);
+  }, [router]);
 
   if (error) {
     return (

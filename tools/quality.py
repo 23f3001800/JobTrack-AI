@@ -44,7 +44,7 @@ def review_application(job_analysis: str, company_profile: str,
     """
     client = anthropic.Anthropic()
     resp = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         max_tokens=800,
         messages=[{"role": "user", "content":
             f"""You are a senior hiring manager reviewing this job application.
@@ -102,7 +102,7 @@ def score_quality(job_analysis: str, company_profile: str,
     """
     client = anthropic.Anthropic()
     resp = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         max_tokens=300,
         messages=[{"role": "user", "content":
             f"""Score this job application on quality. Be strict — mediocre

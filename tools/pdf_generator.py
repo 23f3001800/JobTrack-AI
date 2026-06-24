@@ -141,6 +141,9 @@ def generate_resume_pdf(
     company: str,
     role_fit: str = "",
     output_dir: str = "",
+    parsed_profile: dict | None = None,
+    linkedin_url: str = "",
+    github_url: str = "",
 ) -> str:
     """Generate a tailored PDF resume for a specific job application.
 
@@ -154,14 +157,17 @@ def generate_resume_pdf(
         company: Target company name
         role_fit: Role fit analysis (optional, adds talking points)
         output_dir: Directory to save the PDF (default: workspace/)
+        parsed_profile: Full structured resume data (experience, education, etc.)
+        linkedin_url: LinkedIn profile URL
+        github_url: GitHub profile URL
 
     Returns:
         File path of the generated PDF.
 
-    WHY accept all these params instead of reading from DB?
-    The generator is a pure function — it takes data in, writes a PDF out.
-    This makes it easy to test, reuse, and call from both the agent
-    pipeline and the API endpoint.
+    WHY accept both flat params AND parsed_profile?
+    Backward compatibility — existing callers pass flat params.
+    New callers (resume_generator agent) pass parsed_profile for
+    full-fidelity resume generation with all sections.
     """
     if not output_dir:
         output_dir = os.getenv("WORKSPACE_DIR", "./workspace")
@@ -189,6 +195,10 @@ def generate_resume_pdf(
     # ── Header: Name + Contact ──
     story.append(Paragraph(name, styles["ResumeName"]))
     contact_parts = [p for p in [email, phone] if p]
+    if linkedin_url:
+        contact_parts.append(linkedin_url)
+    if github_url:
+        contact_parts.append(github_url)
     if contact_parts:
         story.append(Paragraph(" | ".join(contact_parts), styles["ResumeContact"]))
 
@@ -199,9 +209,6 @@ def generate_resume_pdf(
     ))
 
     # ── Professional Summary ──
-    # WHY include a tailored summary? ATS systems and recruiters scan
-    # the top of the resume first. A summary targeting this specific
-    # role dramatically improves match rates.
     story.append(Paragraph("PROFESSIONAL SUMMARY", styles["SectionHeader"]))
     summary = (
         f"Experienced professional targeting the <b>{job_title}</b> role at "
@@ -218,6 +225,73 @@ def generate_resume_pdf(
             styles["BulletItem"],
         ))
 
+    # ── Work Experience (from parsed profile) ──
+    if parsed_profile and parsed_profile.get("experience"):
+        story.append(Paragraph("WORK EXPERIENCE", styles["SectionHeader"]))
+        for exp in parsed_profile["experience"]:
+            title = exp.get("title", "")
+            co = exp.get("company", "")
+            start = exp.get("start_date", "")
+            end = exp.get("end_date", "")
+            date_range = f"{start} — {end}" if start else ""
+            header = f"<b>{title}</b>"
+            if co:
+                header += f" at {co}"
+            if date_range:
+                header += f" ({date_range})"
+            story.append(Paragraph(header, styles["SubHeader"]))
+            for b in exp.get("bullets", []):
+                story.append(Paragraph(f"• {b}", styles["BulletItem"]))
+
+    # ── Education (from parsed profile) ──
+    if parsed_profile and parsed_profile.get("education"):
+        story.append(Paragraph("EDUCATION", styles["SectionHeader"]))
+        for edu in parsed_profile["education"]:
+            degree = edu.get("degree", "")
+            inst = edu.get("institution", "")
+            year = edu.get("year", "")
+            line = f"<b>{degree}</b>"
+            if inst:
+                line += f" — {inst}"
+            if year:
+                line += f" ({year})"
+            story.append(Paragraph(line, styles["SubHeader"]))
+            details = edu.get("details", "")
+            if details:
+                story.append(Paragraph(details, styles["BodyText2"]))
+
+    # ── Skills (from parsed profile or fallback) ──
+    skills = (
+        parsed_profile.get("skills", [])
+        if parsed_profile
+        else []
+    )
+    if skills:
+        story.append(Paragraph("SKILLS", styles["SectionHeader"]))
+        # Display as comma-separated for ATS readability
+        skills_text = " • ".join(skills)
+        story.append(Paragraph(skills_text, styles["BodyText2"]))
+
+    # ── Projects (from parsed profile) ──
+    if parsed_profile and parsed_profile.get("projects"):
+        story.append(Paragraph("PROJECTS", styles["SectionHeader"]))
+        for proj in parsed_profile["projects"][:5]:  # Cap at 5
+            pname = proj.get("name", "")
+            pdesc = proj.get("description", "")
+            ptech = proj.get("technologies", [])
+            header = f"<b>{pname}</b>"
+            if ptech:
+                header += f" ({', '.join(ptech)})"
+            story.append(Paragraph(header, styles["SubHeader"]))
+            if pdesc:
+                story.append(Paragraph(pdesc, styles["BodyText2"]))
+
+    # ── Certifications (from parsed profile) ──
+    if parsed_profile and parsed_profile.get("certifications"):
+        story.append(Paragraph("CERTIFICATIONS", styles["SectionHeader"]))
+        for cert in parsed_profile["certifications"]:
+            story.append(Paragraph(f"• {cert}", styles["BulletItem"]))
+
     # ── Role Fit / Talking Points (if available) ──
     if role_fit:
         story.append(Paragraph("ROLE FIT HIGHLIGHTS", styles["SectionHeader"]))
@@ -232,3 +306,4 @@ def generate_resume_pdf(
     doc.build(story)
 
     return filepath
+

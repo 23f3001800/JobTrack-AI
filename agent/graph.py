@@ -2,11 +2,12 @@
 
 Architecture:
     Supervisor (deterministic router)
-        ├── Scout Agent      → scrape job URL
-        ├── Research Agent   → company research + role fit
-        ├── Writer Agent     → cover letter, CV bullets, DM
-        ├── Quality Agent    → review + score (rewrite loop)
-        └── Apply Agent      → log application
+        ├── Scout Agent        → scrape job URL
+        ├── Research Agent     → company research + role fit
+        ├── Writer Agent       → cover letter, CV bullets, DM
+        ├── Resume Generator   → tailored PDF resume
+        ├── Quality Agent      → review + score (rewrite loop)
+        └── Apply Agent        → log application (or pause for review)
 
 The supervisor checks state after each agent completes and routes
 to the next agent. The Writer ↔ Quality loop runs up to 2 times
@@ -31,6 +32,7 @@ from langgraph.graph import END, StateGraph
 from agent.agents.applier import run_applier
 from agent.agents.quality import run_quality
 from agent.agents.research import run_research
+from agent.agents.resume_generator import run_resume_generator
 from agent.agents.scout import run_scout
 from agent.agents.supervisor import route_next_agent
 from agent.agents.writer import run_writer
@@ -55,6 +57,8 @@ class JobState(TypedDict):
     job_url: str  # The job posting URL to process
     user_background: str  # User's background/experience summary
     cv_text: str  # User's CV text (extracted from uploaded PDF)
+    user_id: str  # User ID for scoping applications
+    user_profile: dict  # Full user profile with parsed_profile for PDF generation
 
     # --- Scout Agent outputs ---
     job_analysis: str  # Structured job details (title, requirements, etc.)
@@ -67,6 +71,10 @@ class JobState(TypedDict):
     tailored_bullets: str  # CV bullets rewritten for this specific role
     cover_letter: str  # Personalised 3-paragraph cover letter
     outreach_dm: str  # LinkedIn cold DM
+
+    # --- Resume Generator outputs ---
+    resume_pdf_path: str  # Local file path to generated PDF
+    resume_pdf_url: str  # Download URL for the PDF (/download/filename.pdf)
 
     # --- Quality Agent outputs ---
     quality_score: int  # 1-5 quality rating
@@ -94,6 +102,7 @@ builder = StateGraph(JobState)
 builder.add_node("scout", run_scout)
 builder.add_node("research", run_research)
 builder.add_node("writer", run_writer)
+builder.add_node("resume_generator", run_resume_generator)
 builder.add_node("quality", run_quality)
 builder.add_node("applier", run_applier)
 
@@ -109,12 +118,13 @@ _routing_map = {
     "scout": "scout",
     "research": "research",
     "writer": "writer",
+    "resume_generator": "resume_generator",
     "quality": "quality",
     "applier": "applier",
     "end": END,
 }
 
-for agent_name in ["scout", "research", "writer", "quality", "applier"]:
+for agent_name in ["scout", "research", "writer", "resume_generator", "quality", "applier"]:
     builder.add_conditional_edges(agent_name, route_next_agent, _routing_map)
 
 # Checkpointing: MemorySaver for development.
@@ -125,7 +135,8 @@ checkpointer = MemorySaver()
 app = builder.compile(checkpointer=checkpointer)
 
 
-def run(job_url: str, user_background: str, cv_text: str = "") -> dict:
+def run(job_url: str, user_background: str, cv_text: str = "",
+        user_id: str = "") -> dict:
     """Run the full multi-agent pipeline on a job URL.
 
     Args:
@@ -146,12 +157,16 @@ def run(job_url: str, user_background: str, cv_text: str = "") -> dict:
         job_url=job_url,
         user_background=user_background,
         cv_text=cv_text,
+        user_id=user_id,
+        user_profile={},
         job_analysis="",
         company_profile="",
         role_fit="",
         tailored_bullets="",
         cover_letter="",
         outreach_dm="",
+        resume_pdf_path="",
+        resume_pdf_url="",
         quality_score=0,
         quality_feedback="",
         quality_attempts=0,
@@ -170,4 +185,5 @@ def run(job_url: str, user_background: str, cv_text: str = "") -> dict:
         "tailored_bullets": final.get("tailored_bullets"),
         "quality_score": final.get("quality_score"),
         "role_fit": final.get("role_fit"),
+        "resume_pdf_url": final.get("resume_pdf_url"),
     }

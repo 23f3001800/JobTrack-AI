@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { isLoggedIn, clearTokens, getCurrentUser } from "@/lib/api";
+import { isLoggedIn, clearTokens, getCurrentUser, getProfile } from "@/lib/api";
 
 /**
  * Dashboard Layout — sidebar navigation + main content area.
@@ -39,11 +39,19 @@ export default function DashboardLayout({
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Redirect to login if not authenticated
+  // Redirect to login if not authenticated, or to onboarding if not completed
   useEffect(() => {
     if (!isLoggedIn()) {
       router.push("/login");
+      return;
     }
+    // Check onboarding status
+    getProfile().then((profile) => {
+      const p = profile as { onboarding_complete?: boolean } | null;
+      if (p && !p.onboarding_complete) {
+        router.push("/onboarding");
+      }
+    }).catch(() => {}); // Ignore errors (API might be down)
   }, [router]);
 
   // Close sidebar on route change (mobile)

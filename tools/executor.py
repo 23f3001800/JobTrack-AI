@@ -118,7 +118,10 @@ def _score_quality(job_analysis: str, company_profile: str,
 def _log_application(company: str, job_title: str,
                      cover_letter: str = "", tailored_bullets: str = "",
                      outreach_dm: str = "", job_analysis: str = "",
-                     company_profile: str = "") -> str:
+                     company_profile: str = "", role_fit: str = "",
+                     quality_score: int = 0, quality_feedback: str = "",
+                     job_url: str = "", resume_pdf_url: str = "",
+                     user_id: str = "", status: str = "draft") -> str:
     """Log a completed application to the database.
 
     WHY delegate to db.get_db() instead of writing JSON directly?
@@ -132,14 +135,20 @@ def _log_application(company: str, job_title: str,
     db.log_application({
         "company": company,
         "job_title": job_title,
+        "job_url": job_url,
         "cover_letter": cover_letter,
         "tailored_bullets": tailored_bullets,
         "outreach_dm": outreach_dm,
         "job_analysis": job_analysis,
         "company_profile": company_profile,
-    })
+        "role_fit": role_fit,
+        "quality_score": quality_score,
+        "quality_feedback": quality_feedback,
+        "resume_pdf_url": resume_pdf_url,
+        "status": status,
+    }, user_id=user_id or None)
 
-    return f"Logged application to {company}"
+    return f"Logged application to {company} (status: {status})"
 
 
 def _generate_resume_pdf(

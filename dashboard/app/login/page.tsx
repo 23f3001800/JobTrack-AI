@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { login, signup } from "@/lib/api";
+import { login, signup, getProfile } from "@/lib/api";
 
 /**
  * Login Page — glass card with email/password form.
@@ -35,9 +35,19 @@ export default function LoginPage() {
         setSuccess(result.message + " — you can now log in.");
         setIsSignup(false);
       } else {
-        // Log in and redirect to dashboard
+        // Log in, then check onboarding status
         await login(email, password);
-        router.push("/dashboard");
+        try {
+          const profile = await getProfile() as { onboarding_complete?: boolean };
+          if (profile && !profile.onboarding_complete) {
+            router.push("/onboarding");
+          } else {
+            router.push("/dashboard");
+          }
+        } catch {
+          // If profile fetch fails, default to dashboard
+          router.push("/dashboard");
+        }
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Something went wrong";

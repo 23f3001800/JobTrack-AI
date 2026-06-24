@@ -51,7 +51,7 @@ def tailor_cv_bullets(job_requirements: str, company_profile: str,
     # 3. The raw CV (source material to rewrite from)
     # Putting requirements FIRST biases Claude toward matching them.
     resp = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         max_tokens=1000,
         messages=[{"role":"user","content":
             f"""You are a professional CV coach. Rewrite 4-6 bullet points from this candidate's experience to match the job requirements.
@@ -82,7 +82,7 @@ def write_cover_letter(job_analysis: str, company_profile: str,
     cv_content = load_cv(cv_text=cv_text)
     client = anthropic.Anthropic()
     resp = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-4-6",
         max_tokens=1200,
         messages=[{"role":"user","content":
             f"""Write a professional 3-paragraph cover letter.

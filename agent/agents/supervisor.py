@@ -10,8 +10,9 @@ Routing order:
 1. Scout (scrape job) → if no job_analysis
 2. Research (company + role fit) → if no company_profile or role_fit
 3. Writer (cover letter, bullets, DM) → if no cover_letter
-4. Quality (review + score) → if not quality-approved
-5. Applier (log) → if not logged
+4. Resume Generator (tailored PDF) → if no resume_pdf_url
+5. Quality (review + score) → if not quality-approved
+6. Applier (log as draft) → if not logged
 
 Quality loop: If quality_score < 4 and attempts < 2,
 route back to Writer with feedback.
@@ -40,6 +41,12 @@ def route_next_agent(state: dict) -> str:
     if not state.get("cover_letter"):
         return "writer"
 
+    # Step 4: Generate tailored resume PDF
+    # WHY after writer? Resume PDF needs tailored_bullets from Writer.
+    # WHY before quality? Quality agent can reference the PDF in review.
+    if not state.get("resume_pdf_url"):
+        return "resume_generator"
+
     # Need quality review
     if quality_score == 0:
         return "quality"
@@ -50,8 +57,9 @@ def route_next_agent(state: dict) -> str:
     if quality_score < 4 and quality_attempts < 2:
         return "writer"
 
-    # Step 5: Log the application
+    # Step 5: Log the application (as draft for human review)
     if not state.get("log_result"):
         return "applier"
 
     return "end"
+

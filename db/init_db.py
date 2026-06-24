@@ -110,12 +110,17 @@ def init_supabase():
 
 
 def init_json_db():
-    """Seed admin user in JSON fallback database."""
+    """Seed admin + test user in JSON fallback database."""
     workspace = Path(os.getenv("WORKSPACE_DIR", "./workspace"))
     workspace.mkdir(parents=True, exist_ok=True)
 
     users_file = workspace / "users.json"
     admin_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, ADMIN_EMAIL))
+
+    # Regular test user credentials
+    test_email = "user@jobtrack.ai"
+    test_password = "JobTrack@User2024"
+    test_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, test_email))
 
     # Load existing users or create new
     if users_file.exists():
@@ -131,33 +136,59 @@ def init_json_db():
         for u in users:
             if u.get("email") == ADMIN_EMAIL:
                 u["role"] = "admin"
-        with open(users_file, "w") as f:
-            json.dump(users, f, indent=2)
-        print(f"✅ Admin already exists: {ADMIN_EMAIL}")
-        return True
 
-    # Create admin user
-    admin_user = {
-        "id": admin_id,
-        "email": ADMIN_EMAIL,
-        "password_hash": _hash_password(ADMIN_PASSWORD),
-        "full_name": ADMIN_NAME,
-        "role": "admin",
-        "background": "",
-        "skills": [],
-        "cv_text": "",
-        "created_at": datetime.now().isoformat(),
-    }
-    users.append(admin_user)
+    # Create admin if missing
+    if not admin_exists:
+        admin_user = {
+            "id": admin_id,
+            "email": ADMIN_EMAIL,
+            "password_hash": _hash_password(ADMIN_PASSWORD),
+            "full_name": ADMIN_NAME,
+            "role": "admin",
+            "background": "",
+            "skills": [],
+            "cv_text": "",
+            "parsed_profile": {},
+            "onboarding_complete": True,  # Admin skips onboarding
+            "created_at": datetime.now().isoformat(),
+        }
+        users.append(admin_user)
+        print("✅ Admin user created in JSON database:")
+        print(f"   Email:    {ADMIN_EMAIL}")
+        print(f"   Password: {ADMIN_PASSWORD}")
+        print("   Role:     admin")
+        print(f"   ID:       {admin_id}")
+    else:
+        print(f"✅ Admin already exists: {ADMIN_EMAIL}")
+
+    # Create regular test user if missing
+    test_exists = any(u.get("email") == test_email for u in users)
+    if not test_exists:
+        test_user = {
+            "id": test_id,
+            "email": test_email,
+            "password_hash": _hash_password(test_password),
+            "full_name": "Test User",
+            "role": "user",
+            "background": "",
+            "skills": [],
+            "cv_text": "",
+            "parsed_profile": {},
+            "onboarding_complete": False,  # User must complete onboarding
+            "created_at": datetime.now().isoformat(),
+        }
+        users.append(test_user)
+        print("✅ Test user created:")
+        print(f"   Email:    {test_email}")
+        print(f"   Password: {test_password}")
+        print("   Role:     user")
+        print(f"   ID:       {test_id}")
+    else:
+        print(f"✅ Test user already exists: {test_email}")
 
     with open(users_file, "w") as f:
         json.dump(users, f, indent=2)
 
-    print("✅ Admin user created in JSON database:")
-    print(f"   Email:    {ADMIN_EMAIL}")
-    print(f"   Password: {ADMIN_PASSWORD}")
-    print("   Role:     admin")
-    print(f"   ID:       {admin_id}")
     print(f"   File:     {users_file}")
     return True
 
@@ -189,9 +220,15 @@ def main():
 
     print()
     print("=" * 50)
-    print("🔑 Admin Credentials:")
+    print("🔑 Login Credentials:")
+    print()
+    print("  👑 Admin:")
     print(f"   Email:    {ADMIN_EMAIL}")
     print(f"   Password: {ADMIN_PASSWORD}")
+    print()
+    print("  👤 Regular User:")
+    print("   Email:    user@jobtrack.ai")
+    print("   Password: JobTrack@User2024")
     print("=" * 50)
     print()
     print("⚠️  Change these in production via ADMIN_EMAIL and ADMIN_PASSWORD env vars!")

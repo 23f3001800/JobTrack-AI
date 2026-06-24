@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { getApplications, updateStatus, deleteApplication, updateNotes, type Application } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 
@@ -16,6 +17,7 @@ import { useToast } from "@/components/Toast";
  */
 
 const STATUS_OPTIONS = [
+  "draft",
   "saved",
   "applied",
   "screening",
@@ -26,6 +28,7 @@ const STATUS_OPTIONS = [
 ];
 
 export default function TrackerPage() {
+  const router = useRouter();
   const [apps, setApps] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -191,45 +194,68 @@ export default function TrackerPage() {
             </thead>
             <tbody>
               {filtered.map((app, i) => {
-                const appId = app.id || String(i);
+                // Find the original index in the full apps array for review link
+                const originalIndex = apps.indexOf(app);
+                const appId = app.id || String(originalIndex !== -1 ? originalIndex : i);
                 const isExpanded = expandedId === appId;
+                const isDraft = app.status === "draft";
 
                 return (
                   <>
                     {/* Main row */}
                     <tr
                       key={appId}
-                      onClick={() => toggleExpand(appId)}
-                      style={{ cursor: "pointer" }}
+                      onClick={() => !isDraft && toggleExpand(appId)}
+                      style={{ cursor: isDraft ? "default" : "pointer" }}
                     >
                       <td style={{ width: 30, fontSize: "0.75rem" }}>
-                        {isExpanded ? "▼" : "▶"}
+                        {isDraft ? (
+                          "📝"
+                        ) : (
+                          isExpanded ? "▼" : "▶"
+                        )}
                       </td>
                       <td style={{ fontWeight: 500 }}>{app.company}</td>
                       <td>{app.job_title}</td>
                       <td>
-                        {/* Status dropdown — click stops propagation to prevent row toggle */}
-                        <select
-                          className="input"
-                          value={app.status || "applied"}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            handleStatusChange(appId, e.target.value);
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          style={{
-                            width: "auto",
-                            padding: "0.25rem 0.5rem",
-                            fontSize: "0.75rem",
-                            background: "var(--bg-input)",
-                          }}
-                        >
-                          {STATUS_OPTIONS.map((s) => (
-                            <option key={s} value={s}>
-                              {s}
-                            </option>
-                          ))}
-                        </select>
+                        {isDraft ? (
+                          <button
+                            className="btn btn-primary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push(`/dashboard/review/${appId}`);
+                            }}
+                            style={{
+                              fontSize: "0.75rem",
+                              padding: "0.25rem 0.75rem",
+                            }}
+                          >
+                            📋 Review
+                          </button>
+                        ) : (
+                          /* Status dropdown — click stops propagation to prevent row toggle */
+                          <select
+                            className="input"
+                            value={app.status || "applied"}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              handleStatusChange(appId, e.target.value);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              width: "auto",
+                              padding: "0.25rem 0.5rem",
+                              fontSize: "0.75rem",
+                              background: "var(--bg-input)",
+                            }}
+                          >
+                            {STATUS_OPTIONS.map((s) => (
+                              <option key={s} value={s}>
+                                {s}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </td>
                       <td>
                         {app.quality_score ? (
@@ -257,28 +283,94 @@ export default function TrackerPage() {
                       </td>
                     </tr>
 
-                    {/* Expanded details row */}
+                    {/* Expanded details row — full-width Application Detail View */}
                     {isExpanded && (
                       <tr key={`${appId}-detail`}>
-                        <td colSpan={6} style={{ padding: "var(--space-lg)" }}>
+                        <td colSpan={6} style={{ padding: 0 }}>
                           <div
                             style={{
-                              display: "grid",
-                              gridTemplateColumns: "1fr 1fr",
+                              padding: "var(--space-lg)",
+                              display: "flex",
+                              flexDirection: "column",
                               gap: "var(--space-md)",
                             }}
                           >
-                            {/* Cover letter */}
-                            {app.cover_letter && (
-                              <div>
-                                <h4
+                            {/* ── Detail Header ── */}
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                flexWrap: "wrap",
+                                gap: "var(--space-md)",
+                                paddingBottom: "var(--space-md)",
+                                borderBottom: "1px solid rgba(255,255,255,0.06)",
+                              }}
+                            >
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <h3
                                   style={{
-                                    fontSize: "0.8125rem",
-                                    color: "var(--text-secondary)",
+                                    fontSize: "1.125rem",
+                                    fontWeight: 600,
                                     marginBottom: "var(--space-xs)",
                                   }}
                                 >
-                                  ✉️ Cover Letter
+                                  {app.company} — {app.job_title}
+                                </h3>
+                                <span
+                                  style={{
+                                    fontSize: "0.8125rem",
+                                    color: "var(--text-secondary)",
+                                  }}
+                                >
+                                  {app.applied_at
+                                    ? `Applied ${new Date(app.applied_at).toLocaleDateString()}`
+                                    : "Date not recorded"}
+                                </span>
+                              </div>
+                              <span
+                                className="badge badge-applied"
+                                style={{ textTransform: "capitalize" }}
+                              >
+                                {app.status || "applied"}
+                              </span>
+                              {app.quality_score != null && (
+                                <span
+                                  style={{
+                                    display: "inline-block",
+                                    padding: "0.25rem 0.625rem",
+                                    borderRadius: "var(--radius-md)",
+                                    fontSize: "0.8125rem",
+                                    fontWeight: 600,
+                                    background:
+                                      app.quality_score >= 4
+                                        ? "rgba(52,211,153,0.15)"
+                                        : app.quality_score === 3
+                                        ? "rgba(251,191,36,0.15)"
+                                        : "rgba(248,113,113,0.15)",
+                                    color:
+                                      app.quality_score >= 4
+                                        ? "var(--quality-high, #34d399)"
+                                        : app.quality_score === 3
+                                        ? "var(--quality-mid, #fbbf24)"
+                                        : "var(--quality-low, #f87171)",
+                                  }}
+                                >
+                                  ⭐ {app.quality_score}/5
+                                </span>
+                              )}
+                            </div>
+
+                            {/* ── Job Analysis ── */}
+                            {app.job_analysis && (
+                              <div className="glass-card" style={{ padding: "var(--space-lg)" }}>
+                                <h4
+                                  style={{
+                                    fontSize: "0.875rem",
+                                    fontWeight: 600,
+                                    marginBottom: "var(--space-sm)",
+                                  }}
+                                >
+                                  📋 Job Analysis
                                 </h4>
                                 <pre
                                   style={{
@@ -287,26 +379,27 @@ export default function TrackerPage() {
                                     background: "var(--bg-input)",
                                     padding: "var(--space-md)",
                                     borderRadius: "var(--radius-md)",
-                                    maxHeight: 300,
+                                    maxHeight: 400,
                                     overflow: "auto",
+                                    color: "var(--text-secondary)",
                                   }}
                                 >
-                                  {app.cover_letter}
+                                  {app.job_analysis}
                                 </pre>
                               </div>
                             )}
 
-                            {/* Tailored bullets */}
-                            {app.tailored_bullets && (
-                              <div>
+                            {/* ── Company Profile ── */}
+                            {app.company_profile && (
+                              <div className="glass-card" style={{ padding: "var(--space-lg)" }}>
                                 <h4
                                   style={{
-                                    fontSize: "0.8125rem",
-                                    color: "var(--text-secondary)",
-                                    marginBottom: "var(--space-xs)",
+                                    fontSize: "0.875rem",
+                                    fontWeight: 600,
+                                    marginBottom: "var(--space-sm)",
                                   }}
                                 >
-                                  📝 Tailored CV Bullets
+                                  🏢 Company Profile
                                 </h4>
                                 <pre
                                   style={{
@@ -315,23 +408,24 @@ export default function TrackerPage() {
                                     background: "var(--bg-input)",
                                     padding: "var(--space-md)",
                                     borderRadius: "var(--radius-md)",
-                                    maxHeight: 300,
+                                    maxHeight: 400,
                                     overflow: "auto",
+                                    color: "var(--text-secondary)",
                                   }}
                                 >
-                                  {app.tailored_bullets}
+                                  {app.company_profile}
                                 </pre>
                               </div>
                             )}
 
-                            {/* Role fit */}
+                            {/* ── Role Fit ── */}
                             {app.role_fit && (
-                              <div>
+                              <div className="glass-card" style={{ padding: "var(--space-lg)" }}>
                                 <h4
                                   style={{
-                                    fontSize: "0.8125rem",
-                                    color: "var(--text-secondary)",
-                                    marginBottom: "var(--space-xs)",
+                                    fontSize: "0.875rem",
+                                    fontWeight: 600,
+                                    marginBottom: "var(--space-sm)",
                                   }}
                                 >
                                   🎯 Role Fit Analysis
@@ -343,8 +437,9 @@ export default function TrackerPage() {
                                     background: "var(--bg-input)",
                                     padding: "var(--space-md)",
                                     borderRadius: "var(--radius-md)",
-                                    maxHeight: 300,
+                                    maxHeight: 400,
                                     overflow: "auto",
+                                    color: "var(--text-secondary)",
                                   }}
                                 >
                                   {app.role_fit}
@@ -352,14 +447,72 @@ export default function TrackerPage() {
                               </div>
                             )}
 
-                            {/* DM */}
-                            {app.outreach_dm && (
-                              <div>
+                            {/* ── Cover Letter ── */}
+                            {app.cover_letter && (
+                              <div className="glass-card" style={{ padding: "var(--space-lg)" }}>
                                 <h4
                                   style={{
+                                    fontSize: "0.875rem",
+                                    fontWeight: 600,
+                                    marginBottom: "var(--space-sm)",
+                                  }}
+                                >
+                                  ✉️ Cover Letter
+                                </h4>
+                                <pre
+                                  style={{
                                     fontSize: "0.8125rem",
+                                    whiteSpace: "pre-wrap",
+                                    background: "var(--bg-input)",
+                                    padding: "var(--space-md)",
+                                    borderRadius: "var(--radius-md)",
+                                    maxHeight: 400,
+                                    overflow: "auto",
                                     color: "var(--text-secondary)",
-                                    marginBottom: "var(--space-xs)",
+                                  }}
+                                >
+                                  {app.cover_letter}
+                                </pre>
+                              </div>
+                            )}
+
+                            {/* ── Tailored CV Bullets ── */}
+                            {app.tailored_bullets && (
+                              <div className="glass-card" style={{ padding: "var(--space-lg)" }}>
+                                <h4
+                                  style={{
+                                    fontSize: "0.875rem",
+                                    fontWeight: 600,
+                                    marginBottom: "var(--space-sm)",
+                                  }}
+                                >
+                                  📝 Tailored CV Bullets
+                                </h4>
+                                <pre
+                                  style={{
+                                    fontSize: "0.8125rem",
+                                    whiteSpace: "pre-wrap",
+                                    background: "var(--bg-input)",
+                                    padding: "var(--space-md)",
+                                    borderRadius: "var(--radius-md)",
+                                    maxHeight: 400,
+                                    overflow: "auto",
+                                    color: "var(--text-secondary)",
+                                  }}
+                                >
+                                  {app.tailored_bullets}
+                                </pre>
+                              </div>
+                            )}
+
+                            {/* ── LinkedIn DM ── */}
+                            {app.outreach_dm && (
+                              <div className="glass-card" style={{ padding: "var(--space-lg)" }}>
+                                <h4
+                                  style={{
+                                    fontSize: "0.875rem",
+                                    fontWeight: 600,
+                                    marginBottom: "var(--space-sm)",
                                   }}
                                 >
                                   💬 LinkedIn DM
@@ -371,85 +524,88 @@ export default function TrackerPage() {
                                     background: "var(--bg-input)",
                                     padding: "var(--space-md)",
                                     borderRadius: "var(--radius-md)",
+                                    maxHeight: 300,
+                                    overflow: "auto",
+                                    color: "var(--text-secondary)",
                                   }}
                                 >
                                   {app.outreach_dm}
                                 </pre>
                               </div>
                             )}
-                          </div>
 
-                          {/* Notes section */}
-                          <div style={{ marginTop: "var(--space-md)" }}>
-                            <h4
-                              style={{
-                                fontSize: "0.8125rem",
-                                color: "var(--text-secondary)",
-                                marginBottom: "var(--space-xs)",
-                              }}
-                            >
-                              📝 Notes
-                            </h4>
-                            <textarea
-                              className="input"
-                              placeholder="Add notes... (recruiter name, follow-up date, etc.)"
-                              defaultValue={app.notes || ""}
-                              rows={3}
-                              style={{
-                                width: "100%",
-                                resize: "vertical",
-                                fontSize: "0.8125rem",
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              onBlur={async (e) => {
-                                const newNotes = e.target.value;
-                                if (newNotes !== (app.notes || "")) {
+                            {/* ── Notes ── */}
+                            <div>
+                              <h4
+                                style={{
+                                  fontSize: "0.875rem",
+                                  fontWeight: 600,
+                                  marginBottom: "var(--space-sm)",
+                                }}
+                              >
+                                🗒️ Notes
+                              </h4>
+                              <textarea
+                                className="input"
+                                placeholder="Add notes... (recruiter name, follow-up date, etc.)"
+                                defaultValue={app.notes || ""}
+                                rows={3}
+                                style={{
+                                  width: "100%",
+                                  resize: "vertical",
+                                  fontSize: "0.8125rem",
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                onBlur={async (e) => {
+                                  const newNotes = e.target.value;
+                                  if (newNotes !== (app.notes || "")) {
+                                    try {
+                                      await updateNotes(appId, newNotes);
+                                      setApps((prev) =>
+                                        prev.map((a, idx) =>
+                                          (a.id || String(idx)) === appId
+                                            ? { ...a, notes: newNotes }
+                                            : a
+                                        )
+                                      );
+                                      toast("Notes saved", "success");
+                                    } catch {
+                                      toast("Failed to save notes", "error");
+                                    }
+                                  }
+                                }}
+                              />
+                            </div>
+
+                            {/* ── Delete ── */}
+                            <div style={{ textAlign: "right" }}>
+                              <button
+                                className="btn btn-ghost"
+                                style={{
+                                  fontSize: "0.75rem",
+                                  color: "var(--error)",
+                                  padding: "0.25rem 0.75rem",
+                                }}
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (!confirm(`Delete application for ${app.company}?`)) return;
                                   try {
-                                    await updateNotes(appId, newNotes);
+                                    await deleteApplication(appId);
                                     setApps((prev) =>
-                                      prev.map((a, idx) =>
-                                        (a.id || String(idx)) === appId
-                                          ? { ...a, notes: newNotes }
-                                          : a
+                                      prev.filter((a, idx) =>
+                                        (a.id || String(idx)) !== appId
                                       )
                                     );
-                                    toast("Notes saved", "success");
+                                    setExpandedId(null);
+                                    toast(`Deleted ${app.company}`, "success");
                                   } catch {
-                                    toast("Failed to save notes", "error");
+                                    toast("Failed to delete", "error");
                                   }
-                                }
-                              }}
-                            />
-                          </div>
-
-                          {/* Delete button */}
-                          <div style={{ marginTop: "var(--space-md)", textAlign: "right" }}>
-                            <button
-                              className="btn btn-ghost"
-                              style={{
-                                fontSize: "0.75rem",
-                                color: "var(--error)",
-                                padding: "0.25rem 0.75rem",
-                              }}
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                if (!confirm(`Delete application for ${app.company}?`)) return;
-                                try {
-                                  await deleteApplication(appId);
-                                  setApps((prev) =>
-                                    prev.filter((a, idx) =>
-                                      (a.id || String(idx)) !== appId
-                                    )
-                                  );
-                                  setExpandedId(null);
-                                  toast(`Deleted ${app.company}`, "success");
-                                } catch {
-                                  toast("Failed to delete", "error");
-                                }
-                              }}
-                            >
-                              🗑️ Delete Application
-                            </button>
+                                }}
+                              >
+                                🗑️ Delete Application
+                              </button>
+                            </div>
                           </div>
                         </td>
                       </tr>

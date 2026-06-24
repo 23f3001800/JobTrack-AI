@@ -70,7 +70,8 @@ STEP_LABELS = {
     "tailored_bullets": "CV tailoring",
     "cover_letter":     "Cover letter",
     "outreach_dm":      "LinkedIn DM",
-    "log_result":       "Application logged",
+    "resume_pdf_url":   "Resume PDF generated",
+    "log_result":       "Application saved as draft",
 }
 
 @app.post("/run", tags=["agent"])
@@ -91,20 +92,23 @@ async def run_agent(request: Request, body: RunRequest,
     # If user is JWT-authenticated, use their profile data
     background = body.user_background
     cv_text = ""
+    user_profile = {}  # Full profile for resume generator
     if user.is_authenticated:
         from db import get_db
         profile = get_db().get_profile(user.user_id)
         if not body.user_background:
             background = profile.get("background", body.user_background)
         cv_text = profile.get("cv_text", "")
+        user_profile = profile  # Pass full profile for PDF generation
 
-    # Initialize all state fields — new multi-agent fields include
-    # role_fit (Research agent) and quality loop tracking.
+    # Initialize all state fields — includes resume generation and user profile
     initial = JobState(
         job_url=body.job_url, user_background=background,
-        cv_text=cv_text,
+        cv_text=cv_text, user_id=user.user_id or "",
+        user_profile=user_profile,
         job_analysis="", company_profile="", role_fit="",
         tailored_bullets="", cover_letter="", outreach_dm="",
+        resume_pdf_path="", resume_pdf_url="",
         quality_score=0, quality_feedback="", quality_attempts=0,
         log_result="", messages=[], iterations=0,
     )
@@ -170,7 +174,7 @@ async def update_status(app_id: str, status: str,
     and the backend validates the enum value.
     """
     valid_statuses = [
-        "saved", "applied", "screening", "interview",
+        "draft", "saved", "applied", "screening", "interview",
         "offer", "rejected", "withdrawn",
     ]
     if status not in valid_statuses:
@@ -272,6 +276,59 @@ async def update_notes(app_id: str, body: NotesUpdate,
         {"notes": body.notes}
     ).eq("id", app_id).execute()
     return {"message": "Notes updated", "id": app_id, "notes": body.notes}
+
+
+class FieldsUpdate(BaseModel):
+    """Editable application content fields for the review page."""
+    cover_letter: str | None = None
+    tailored_bullets: str | None = None
+    outreach_dm: str | None = None
+
+
+@app.patch("/tracker/{app_id}/fields", tags=["tracker"])
+async def update_fields(app_id: str, body: FieldsUpdate,
+                        user: AuthUser = Depends(verify_user)):
+    """Update editable content fields on a draft application.
+
+    WHY a separate endpoint? The review page lets users edit cover letter,
+    CV bullets, and outreach DM before submission. These fields are
+    content-heavy and need different validation than status or notes.
+    """
+    update_data = body.model_dump(exclude_none=True)
+    if not update_data:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    from db import get_db
+    db = get_db()
+
+    # JsonDB: update by index or id
+    if hasattr(db, "tracker_file"):
+        import json as _json
+        with open(db.tracker_file) as f:
+            apps = _json.load(f)
+
+        updated = False
+        for i, a in enumerate(apps):
+            if str(a.get("id", i)) == app_id or str(i) == app_id:
+                apps[i].update(update_data)
+                updated = True
+                break
+
+        if not updated:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Application not found")
+
+        with open(db.tracker_file, "w") as f:
+            _json.dump(apps, f, indent=2)
+
+        return {"message": "Fields updated", "id": app_id}
+
+    # SupabaseDB
+    db.client.table("applications").update(
+        update_data
+    ).eq("id", app_id).execute()
+    return {"message": "Fields updated", "id": app_id}
 
 
 @app.post("/generate-pdf", tags=["pdf"])

@@ -32,6 +32,9 @@ export interface Application {
   job_analysis?: string;
   company_profile?: string;
   notes?: string;
+  job_url?: string;
+  resume_pdf_url?: string;
+  quality_feedback?: string;
 }
 
 /** Streaming step from /run endpoint */
@@ -49,6 +52,37 @@ export interface DashboardStats {
   by_status: Record<string, number>;
   average_quality_score: number;
   quality_rated_count: number;
+}
+
+/** Structured profile data parsed from resume by AI */
+export interface ParsedProfile {
+  full_name: string;
+  email: string;
+  phone: string;
+  linkedin_url: string;
+  github_url: string;
+  summary: string;
+  skills: string[];
+  experience: Array<{
+    title: string;
+    company: string;
+    start_date: string;
+    end_date: string;
+    bullets: string[];
+  }>;
+  education: Array<{
+    degree: string;
+    institution: string;
+    year: string;
+    details: string;
+  }>;
+  projects: Array<{
+    name: string;
+    description: string;
+    technologies: string[];
+  }>;
+  certifications: string[];
+  achievements: string[];
 }
 
 /** Login response */
@@ -196,6 +230,14 @@ export async function updateNotes(appId: string, notes: string) {
   });
 }
 
+/** PATCH /tracker/{id}/fields — update application content fields */
+export async function updateApplicationFields(appId: string, fields: Record<string, string>) {
+  return apiFetch(`/tracker/${appId}/fields`, {
+    method: "PATCH",
+    body: JSON.stringify(fields),
+  });
+}
+
 /** GET /admin/stats — dashboard statistics */
 export async function getStats(): Promise<DashboardStats> {
   return apiFetch("/admin/stats");
@@ -284,7 +326,7 @@ export async function saveJob(url: string, title: string, company: string = "", 
 }
 
 /** POST /auth/profile/resume — upload resume PDF */
-export async function uploadResume(file: File): Promise<{ message: string; cv_text: string }> {
+export async function uploadResume(file: File): Promise<{ message: string; cv_text: string; parsed_profile: ParsedProfile }> {
   const token = getToken();
   const formData = new FormData();
   formData.append("file", file);
@@ -308,5 +350,13 @@ export async function updateProfile(data: Record<string, unknown>) {
   return apiFetch("/auth/profile", {
     method: "PATCH",
     body: JSON.stringify(data),
+  });
+}
+
+/** Mark onboarding as complete */
+export async function completeOnboarding(profileData: Record<string, unknown>) {
+  return apiFetch("/auth/profile", {
+    method: "PATCH",
+    body: JSON.stringify({ ...profileData, onboarding_complete: true }),
   });
 }

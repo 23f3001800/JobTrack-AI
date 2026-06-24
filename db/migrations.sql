@@ -45,17 +45,22 @@ CREATE TYPE user_role AS ENUM (
 -- We need custom fields (background, skills, CV) that don't belong there.
 -- The id column references auth.users(id) for a 1:1 relationship.
 CREATE TABLE profiles (
-    id          UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    email       TEXT NOT NULL,
-    full_name   TEXT DEFAULT '',
-    role        user_role DEFAULT 'user',
-    background  TEXT DEFAULT '',           -- User's experience/skills summary
-    skills      TEXT[] DEFAULT '{}',       -- Array of skill tags for matching
-    cv_text     TEXT DEFAULT '',           -- Extracted text from uploaded CV PDF
-    cv_pdf_url  TEXT DEFAULT '',           -- Supabase Storage URL for the PDF
-    preferences JSONB DEFAULT '{}',        -- Flexible prefs: location, salary, remote, etc.
-    created_at  TIMESTAMPTZ DEFAULT now(),
-    updated_at  TIMESTAMPTZ DEFAULT now()
+    id                   UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email                TEXT NOT NULL,
+    full_name            TEXT DEFAULT '',
+    role                 user_role DEFAULT 'user',
+    background           TEXT DEFAULT '',           -- User's experience/skills summary
+    skills               TEXT[] DEFAULT '{}',       -- Array of skill tags for matching
+    cv_text              TEXT DEFAULT '',           -- Extracted text from uploaded CV PDF
+    cv_pdf_url           TEXT DEFAULT '',           -- Supabase Storage URL for the PDF
+    phone                TEXT DEFAULT '',           -- Contact phone
+    linkedin_url         TEXT DEFAULT '',           -- LinkedIn profile URL
+    github_url           TEXT DEFAULT '',           -- GitHub profile URL
+    parsed_profile       JSONB DEFAULT '{}',       -- AI-parsed structured resume data
+    onboarding_complete  BOOLEAN DEFAULT false,    -- Whether user completed onboarding wizard
+    preferences          JSONB DEFAULT '{}',        -- Flexible prefs: location, salary, remote, etc.
+    created_at           TIMESTAMPTZ DEFAULT now(),
+    updated_at           TIMESTAMPTZ DEFAULT now()
 );
 
 -- Jobs table stores scraped job postings.
@@ -85,13 +90,14 @@ CREATE TABLE applications (
     job_id           UUID REFERENCES jobs(id) ON DELETE SET NULL,
     company          TEXT NOT NULL,
     job_title        TEXT NOT NULL,
+    job_url          TEXT DEFAULT '',           -- Original job posting URL
     status           application_status DEFAULT 'applied',
 
     -- Generated materials (from Writer agent)
     cover_letter     TEXT DEFAULT '',
     tailored_bullets TEXT DEFAULT '',
     outreach_dm      TEXT DEFAULT '',
-    resume_pdf_url   TEXT DEFAULT '',       -- Supabase Storage URL for tailored resume
+    resume_pdf_url   TEXT DEFAULT '',       -- URL/path for tailored resume PDF
 
     -- Analysis data (from Scout + Research agents)
     job_analysis     TEXT DEFAULT '',
@@ -101,6 +107,10 @@ CREATE TABLE applications (
     -- Quality scoring (from Quality agent)
     quality_score    INTEGER DEFAULT 0,     -- 1-5 from quality agent
     quality_feedback TEXT DEFAULT '',
+
+    -- User notes and submission snapshot
+    notes            TEXT DEFAULT '',       -- Free-form user notes
+    submitted_snapshot JSONB DEFAULT NULL,  -- Frozen copy of all fields at submission time
 
     -- Timestamps
     applied_at       TIMESTAMPTZ DEFAULT now(),

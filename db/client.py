@@ -213,7 +213,9 @@ class JsonDB:
     def log_application(self, data: dict, user_id: str = None) -> dict:
         """Append an application to tracker.json and save output files.
 
-        Mirrors the original _log_application() behavior from executor.py.
+        WHY store cover_letter and outreach_dm in the tracker entry?
+        Users need to view their full submission history. The Supabase
+        version already stores these — JSON mode must match for parity.
         """
         slug = data.get("company", "unknown").lower().replace(" ", "_")
 
@@ -228,18 +230,27 @@ class JsonDB:
         if tailored_bullets:
             (self.workspace / f"{slug}_tailored_bullets.txt").write_text(tailored_bullets)
 
-        # Build tracker entry
+        outreach_dm = data.get("outreach_dm", "")
+
+        # Build tracker entry — store ALL application fields
         entry = {
             "company": data.get("company", ""),
             "job_title": data.get("job_title", ""),
+            "job_url": data.get("job_url", ""),
             "applied_at": datetime.now().isoformat(),
-            "status": data.get("status", "applied"),
+            "status": data.get("status", "draft"),
             "job_analysis": data.get("job_analysis", ""),
             "company_profile": data.get("company_profile", ""),
+            "cover_letter": cover_letter,
             "tailored_bullets": tailored_bullets,
+            "outreach_dm": outreach_dm,
             "role_fit": data.get("role_fit", ""),
             "quality_score": data.get("quality_score", 0),
+            "quality_feedback": data.get("quality_feedback", ""),
+            "resume_pdf_url": data.get("resume_pdf_url", ""),
         }
+        if user_id:
+            entry["user_id"] = user_id
 
         # Append to tracker
         tracker = self._load_tracker()
@@ -249,11 +260,17 @@ class JsonDB:
         return entry
 
     def get_applications(self, user_id: str = None) -> list:
-        """Return all applications from tracker.json.
+        """Return applications from tracker.json, filtered by user.
 
-        user_id is ignored in JSON mode (single-user).
+        WHY filter in JSON mode? Multi-user local dev is possible
+        (admin + regular user). Each user should only see their own
+        applications. Admins see all (user_id=None).
         """
-        return self._load_tracker()
+        tracker = self._load_tracker()
+        if user_id:
+            return [a for a in tracker if a.get("user_id") == user_id
+                    or not a.get("user_id")]  # Include legacy entries with no user_id
+        return tracker
 
     def update_application_status(self, app_id: str, status: str) -> dict:
         """Update status by index (JSON mode doesn't have UUIDs).
@@ -272,17 +289,60 @@ class JsonDB:
         return {}
 
     def get_profile(self, user_id: str = None) -> dict:
-        """Return a stub profile in JSON mode."""
-        return {
-            "full_name": "Local User",
-            "background": os.getenv("USER_BACKGROUND", ""),
-            "skills": [],
-            "cv_text": "",
-        }
+        """Return user profile from users.json.
+
+        WHY read from users.json instead of a stub?
+        The onboarding flow and resume parser write structured profile
+        data that must be persisted and retrievable.
+        """
+        users_file = self.workspace / "users.json"
+        if not users_file.exists():
+            return {
+                "full_name": "Local User",
+                "background": os.getenv("USER_BACKGROUND", ""),
+                "skills": [],
+                "cv_text": "",
+                "parsed_profile": {},
+                "onboarding_complete": False,
+            }
+
+        with open(users_file) as f:
+            users = json.load(f)
+
+        # Find user by ID, or return first user if no ID
+        for u in users:
+            if user_id and u.get("id") == user_id:
+                return {k: v for k, v in u.items() if k != "password_hash"}
+        # Fallback: return first user (single-user local dev)
+        if users:
+            u = users[0]
+            return {k: v for k, v in u.items() if k != "password_hash"}
+        return {}
 
     def update_profile(self, user_id: str, data: dict) -> dict:
-        """No-op in JSON mode — profiles aren't persisted locally."""
-        return data
+        """Update user profile fields in users.json.
+
+        WHY persist now? Profile data includes parsed resume,
+        onboarding state, and contact info that must survive restarts.
+        """
+        users_file = self.workspace / "users.json"
+        if not users_file.exists():
+            return data
+
+        with open(users_file) as f:
+            users = json.load(f)
+
+        updated = data
+        for u in users:
+            if user_id and u.get("id") == user_id:
+                u.update(data)
+                updated = {k: v for k, v in u.items() if k != "password_hash"}
+                break
+
+        with open(users_file, "w") as f:
+            json.dump(users, f, indent=2)
+
+        return updated
 
     def save_job(self, data: dict, user_id: str = None) -> dict:
         """No-op in JSON mode — jobs aren't saved separately."""

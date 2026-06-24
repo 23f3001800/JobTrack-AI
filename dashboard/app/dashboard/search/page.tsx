@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { searchJobs, runAgent, type StreamStep } from "@/lib/api";
+import { searchJobs, runAgent, getApplications, type StreamStep } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 
 /**
@@ -77,6 +77,8 @@ export default function SearchApplyPage() {
   const [steps, setSteps] = useState<StreamStep[]>([]);
   const [running, setRunning] = useState(false);
   const [agentError, setAgentError] = useState("");
+  const [autoRun, setAutoRun] = useState(false);
+  const [draftId, setDraftId] = useState<string | null>(null);
 
   // Sync URL param on mount
   useEffect(() => {
@@ -105,18 +107,27 @@ export default function SearchApplyPage() {
     }
   };
 
-  /** Switch to apply mode with a pre-filled URL from search results */
+  /** Switch to apply mode, pre-fill URL, and auto-start agent */
   const handleApplyFromResult = (url: string) => {
     setJobUrl(url);
     setMode("apply");
     setSteps([]);
     setAgentError("");
-    toast("Job URL loaded — click Run Agent to apply", "info");
+    setAutoRun(true);
   };
 
+  // Auto-run agent when triggered from search results
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (autoRun && jobUrl && !running) {
+      setAutoRun(false);
+      handleRunAgent();
+    }
+  }, [autoRun, jobUrl]);
+
   // ── Agent runner ──
-  const handleRunAgent = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleRunAgent = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!jobUrl.trim()) return;
 
     setAgentError("");
@@ -140,6 +151,18 @@ export default function SearchApplyPage() {
   };
 
   const isComplete = steps.some((s) => s.step === "complete");
+
+  // After pipeline completes, find the new draft for review link
+  useEffect(() => {
+    if (isComplete) {
+      getApplications().then((data) => {
+        const apps = data.applications || [];
+        if (apps.length > 0) {
+          setDraftId(String(apps.length - 1));
+        }
+      }).catch(() => {});
+    }
+  }, [isComplete]);
 
   return (
     <div className="animate-fade-in">
@@ -297,7 +320,7 @@ export default function SearchApplyPage() {
                     className="glass-card"
                     style={{ padding: "var(--space-lg)" }}
                   >
-                    {/* Header: source icon + title */}
+                    {/* Header: source badge + title link + actions */}
                     <div
                       style={{
                         display: "flex",
@@ -332,7 +355,23 @@ export default function SearchApplyPage() {
                             marginBottom: "var(--space-xs)",
                           }}
                         >
-                          {result.title}
+                          <a
+                            href={result.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              color: "inherit",
+                              textDecoration: "none",
+                            }}
+                            onMouseEnter={(e) =>
+                              (e.currentTarget.style.textDecoration = "underline")
+                            }
+                            onMouseLeave={(e) =>
+                              (e.currentTarget.style.textDecoration = "none")
+                            }
+                          >
+                            {result.title}
+                          </a>
                         </h3>
                         <p
                           style={{
@@ -345,12 +384,12 @@ export default function SearchApplyPage() {
                         </p>
                       </div>
 
-                      {/* Actions */}
+                      {/* Actions: Apply button + small link icon */}
                       <div
                         style={{
                           display: "flex",
-                          flexDirection: "column",
-                          gap: "var(--space-xs)",
+                          alignItems: "center",
+                          gap: "var(--space-sm)",
                           flexShrink: 0,
                         }}
                       >
@@ -358,23 +397,31 @@ export default function SearchApplyPage() {
                           href={result.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="btn btn-ghost"
+                          title="Open job posting"
                           style={{
-                            fontSize: "0.75rem",
-                            padding: "0.375rem 0.625rem",
+                            fontSize: "1.125rem",
+                            lineHeight: 1,
+                            opacity: 0.6,
+                            transition: "opacity 0.15s",
                           }}
+                          onMouseEnter={(e) =>
+                            (e.currentTarget.style.opacity = "1")
+                          }
+                          onMouseLeave={(e) =>
+                            (e.currentTarget.style.opacity = "0.6")
+                          }
                         >
-                          🔗 View
+                          🔗
                         </a>
                         <button
                           className="btn btn-primary"
                           onClick={() => handleApplyFromResult(result.url)}
                           style={{
-                            fontSize: "0.75rem",
-                            padding: "0.375rem 0.625rem",
+                            fontSize: "0.8125rem",
+                            padding: "0.375rem 0.875rem",
                           }}
                         >
-                          🚀 Apply
+                          🚀 Apply Now
                         </button>
                       </div>
                     </div>
@@ -454,7 +501,9 @@ export default function SearchApplyPage() {
                   marginBottom: "var(--space-md)",
                 }}
               >
-                {isComplete ? "✅ Pipeline Complete" : "⏳ Agent Progress"}
+                {isComplete
+                  ? "✅ Your application materials are ready for review"
+                  : "⏳ Agent Progress"}
               </h2>
 
               <div className="stream-steps">
@@ -514,9 +563,15 @@ export default function SearchApplyPage() {
                 >
                   <button
                     className="btn btn-primary"
-                    onClick={() => router.push("/dashboard/tracker")}
+                    onClick={() =>
+                      router.push(
+                        draftId
+                          ? `/dashboard/review/${draftId}`
+                          : "/dashboard/tracker"
+                      )
+                    }
                   >
-                    📋 View in Tracker
+                    📋 Review & Submit
                   </button>
                   <button
                     className="btn btn-ghost"
