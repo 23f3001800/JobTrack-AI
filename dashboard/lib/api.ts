@@ -55,7 +55,7 @@ export interface LoginResponse {
   access_token: string;
   refresh_token: string;
   expires_in: number;
-  user: { id: string; email: string };
+  user: { id: string; email: string; role?: string };
 }
 
 // ──────────────────────────────────────────────
@@ -83,6 +83,7 @@ export function setTokens(access: string, refresh: string): void {
 export function clearTokens(): void {
   localStorage.removeItem("jt_access_token");
   localStorage.removeItem("jt_refresh_token");
+  localStorage.removeItem("jt_user");
 }
 
 export function isLoggedIn(): boolean {
@@ -138,6 +139,10 @@ export async function login(email: string, password: string): Promise<LoginRespo
     body: JSON.stringify({ email, password }),
   });
   setTokens(data.access_token, data.refresh_token);
+  // Store user data for role-based UI rendering
+  if (data.user) {
+    localStorage.setItem("jt_user", JSON.stringify(data.user));
+  }
   return data;
 }
 

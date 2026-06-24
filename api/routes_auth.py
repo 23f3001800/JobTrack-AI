@@ -96,39 +96,79 @@ async def signup(body: SignupRequest):
 async def login(body: LoginRequest):
     """Authenticate user and return JWT tokens.
 
-    Returns access_token (short-lived) and refresh_token (long-lived).
-    The frontend stores these and sends access_token as Bearer token.
+    Supports two backends:
+    1. Supabase Auth (production) — returns real JWTs
+    2. JSON fallback (local dev) — returns a simple token from users.json
+
+    WHY support both? Developers shouldn't need Supabase credentials
+    just to test the dashboard locally. The JSON fallback verifies
+    credentials against the seeded admin user from db/init_db.py.
     """
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_anon = os.getenv("SUPABASE_ANON_KEY")
 
-    if not supabase_url or not supabase_anon:
+    # ── Supabase Auth (production) ──
+    if supabase_url and supabase_anon:
+        from supabase import create_client
+        client = create_client(supabase_url, supabase_anon)
+
+        try:
+            result = client.auth.sign_in_with_password({
+                "email": body.email,
+                "password": body.password,
+            })
+
+            return {
+                "access_token": result.session.access_token,
+                "refresh_token": result.session.refresh_token,
+                "expires_in": result.session.expires_in,
+                "user": {
+                    "id": result.user.id,
+                    "email": result.user.email,
+                },
+            }
+
+        except Exception:
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    # ── JSON Fallback (local dev) ──
+    import hashlib
+    import json
+    from pathlib import Path
+
+    workspace = Path(os.getenv("WORKSPACE_DIR", "./workspace"))
+    users_file = workspace / "users.json"
+
+    if not users_file.exists():
         raise HTTPException(
             status_code=503,
-            detail="Supabase not configured — login unavailable in local dev mode",
+            detail="No auth backend configured. Run: python -m db.init_db",
         )
 
-    from supabase import create_client
-    client = create_client(supabase_url, supabase_anon)
+    with open(users_file) as f:
+        users = json.load(f)
 
-    try:
-        result = client.auth.sign_in_with_password({
-            "email": body.email,
-            "password": body.password,
-        })
+    password_hash = hashlib.sha256(body.password.encode()).hexdigest()
 
-        return {
-            "access_token": result.session.access_token,
-            "refresh_token": result.session.refresh_token,
-            "expires_in": result.session.expires_in,
-            "user": {
-                "id": result.user.id,
-                "email": result.user.email,
-            },
-        }
+    for user in users:
+        if user["email"] == body.email and user["password_hash"] == password_hash:
+            # WHY use the API_KEY as the token?
+            # In JSON fallback mode, there's no JWT infrastructure.
+            # The API key serves as the auth token — the auth middleware
+            # already accepts API keys as Bearer tokens.
+            api_key = os.getenv("API_KEY", "dev-secret-key")
+            return {
+                "access_token": api_key,
+                "refresh_token": "",
+                "expires_in": 86400,
+                "user": {
+                    "id": user["id"],
+                    "email": user["email"],
+                    "role": user.get("role", "user"),
+                },
+            }
 
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+    raise HTTPException(status_code=401, detail="Invalid email or password")
 
 
 # ──────────────────────────────────────────────

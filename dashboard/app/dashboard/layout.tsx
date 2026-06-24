@@ -24,6 +24,7 @@ const NAV_ITEMS = [
   { href: "/dashboard/search", label: "Search Jobs", icon: "🔍" },
   { href: "/dashboard/tracker", label: "Tracker", icon: "📋" },
   { href: "/dashboard/settings", label: "Settings", icon: "⚙️" },
+  { href: "/dashboard/admin", label: "Admin", icon: "🛡️" },
 ];
 
 export default function DashboardLayout({
