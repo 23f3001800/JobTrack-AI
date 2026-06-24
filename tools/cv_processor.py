@@ -5,12 +5,28 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def load_cv(path: str = None) -> str:
-    """Extract text from PDF CV."""
+def load_cv(path: str = None, cv_text: str = None) -> str:
+    """Extract text from PDF CV or use pre-extracted text.
+
+    WHY accept cv_text directly?
+    In multi-user mode, each user's CV text is stored in the database
+    (extracted during upload). Passing it directly avoids filesystem
+    dependency and supports concurrent users with different CVs.
+
+    Fallback order:
+    1. cv_text parameter (from database)
+    2. PDF file at path parameter
+    3. PDF file at CV_PATH env var
+    """
+    # Prefer pre-extracted text from database
+    if cv_text and cv_text.strip():
+        return cv_text.strip()
+
+    # Fall back to file-based extraction
     path = path or os.getenv("CV_PATH", "./my_cv.pdf")
     if not os.path.exists(path):
         raise FileNotFoundError(
-            f"CV not found at {path}. Set CV_PATH in .env"
+            f"CV not found at {path}. Upload your resume in Settings or set CV_PATH in .env"
         )
     reader = PdfReader(path)
     # WHY join all pages?
@@ -19,12 +35,13 @@ def load_cv(path: str = None) -> str:
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
     return text.strip()
 
-def tailor_cv_bullets(job_requirements: str, company_profile: str) -> str:
+def tailor_cv_bullets(job_requirements: str, company_profile: str,
+                      cv_text: str = None) -> str:
     """
     Rewrite CV bullets to match job requirements.
     Uses Claude Sonnet — quality matters here most.
     """
-    cv_text = load_cv()
+    cv_content = load_cv(cv_text=cv_text)
     client = anthropic.Anthropic()
 
     # WHY this specific prompt structure?
@@ -54,15 +71,15 @@ COMPANY PROFILE:
 {company_profile}
 
 CANDIDATE'S FULL CV:
-{cv_text[:3000]}"""}]
+{cv_content[:3000]}"""}]
     )
     return resp.content[0].text
 
 
 def write_cover_letter(job_analysis: str, company_profile: str,
-                       tailored_bullets: str) -> str:
+                       tailored_bullets: str, cv_text: str = None) -> str:
     """Write a personalised 3-paragraph cover letter."""
-    cv_text = load_cv()
+    cv_content = load_cv(cv_text=cv_text)
     client = anthropic.Anthropic()
     resp = client.messages.create(
         model="claude-sonnet-4-20250514",
@@ -81,6 +98,6 @@ Keep under 300 words. No fluff.
 JOB: {job_analysis[:500]}
 COMPANY: {company_profile[:400]}
 MY RELEVANT EXPERIENCE (tailored): {tailored_bullets}
-MY FULL CV: {cv_text[:2000]}"""}]
+MY FULL CV: {cv_content[:2000]}"""}]
     )
     return resp.content[0].text

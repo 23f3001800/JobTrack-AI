@@ -600,17 +600,141 @@ body {
 }
 
 /* ────────────────────────────────────────────
-   Responsive
+   Responsive — Tablet
+   ──────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .sidebar {
+    width: 200px;
+  }
+  .main-content {
+    margin-left: 200px;
+  }
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ────────────────────────────────────────────
+   Responsive — Mobile
    ──────────────────────────────────────────── */
 @media (max-width: 768px) {
+  /* Sidebar: slides off-screen, toggled by .sidebar-open */
   .sidebar {
+    position: fixed;
+    z-index: 1000;
+    width: 260px;
     transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   }
+
+  .sidebar.sidebar-open {
+    transform: translateX(0);
+  }
+
+  /* Overlay backdrop when sidebar is open */
+  .sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
+  }
+
+  .sidebar-overlay.visible {
+    display: block;
+  }
+
   .main-content {
     margin-left: 0;
     padding: var(--space-md);
   }
+
+  /* Hamburger button */
+  .mobile-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-sm) var(--space-md);
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 998;
+  }
+
+  .hamburger-btn {
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: var(--space-xs);
+    border-radius: var(--radius-sm);
+    line-height: 1;
+  }
+
+  .hamburger-btn:hover {
+    background: var(--bg-card-hover);
+  }
+
+  /* Stats grid stacks */
   .stats-grid {
     grid-template-columns: 1fr 1fr;
+    gap: var(--space-sm);
+  }
+
+  /* Tables scroll horizontally */
+  .app-table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+  }
+
+  /* Page header adapts */
+  .page-header h1 {
+    font-size: 1.25rem;
+  }
+
+  /* Glass cards: less padding */
+  .glass-card {
+    padding: var(--space-md);
+  }
+
+  /* Login card fills screen */
+  .login-card {
+    width: 95%;
+    max-width: none;
+    margin: var(--space-md);
+  }
+}
+
+/* Very small screens */
+@media (max-width: 480px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .page-header {
+    flex-direction: column;
+    gap: var(--space-sm);
+  }
+}
+
+/* Hide mobile header on desktop */
+.mobile-header {
+  display: none;
+}
+
+/* ── Toast Animations ── */
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(40px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
   }
 }

@@ -34,6 +34,7 @@ def run_writer(state: dict) -> dict:
     company_profile = state.get("company_profile", "")
     role_fit = state.get("role_fit", "")
     quality_feedback = state.get("quality_feedback", "")
+    cv_text = state.get("cv_text", "")
     is_rewrite = bool(quality_feedback)
 
     updates: dict = {}
@@ -54,7 +55,8 @@ def run_writer(state: dict) -> dict:
 
     tailored_bullets = execute_tool(
         "tailor_cv_bullets",
-        {"job_requirements": job_analysis, "company_profile": enriched_profile},
+        {"job_requirements": job_analysis, "company_profile": enriched_profile,
+         "cv_text": cv_text},
     )
     updates["tailored_bullets"] = tailored_bullets
 
@@ -65,6 +67,7 @@ def run_writer(state: dict) -> dict:
             "job_analysis": job_analysis,
             "company_profile": company_profile,
             "tailored_bullets": tailored_bullets,
+            "cv_text": cv_text,
         },
     )
     updates["cover_letter"] = cover_letter

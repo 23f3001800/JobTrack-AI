@@ -28,5 +28,16 @@
     "job_title": "Full Stack Engineering Internship",
     "applied_at": "2026-06-22T15:24:34.634673",
     "status": "applied"
+  },
+  {
+    "company": "Unknown Company",
+    "job_title": "Unknown Role",
+    "applied_at": "2026-06-24T05:57:23.025896",
+    "status": "applied",
+    "job_analysis": "I don't see a job posting in your message. You've provided instructions for extracting fields and mentioned \"wellfound.com\" as a source, but no actual job posting content to extract from.\n\nPlease provide the job posting text, and I'll extract the following fields in plain text:\n\n- JOB TITLE\n- COMPANY\n- LOCATION\n- EMPLOYMENT TYPE\n- SALARY\n- KEY REQUIREMENTS (bullet points)\n- RESPONSIBILITIES (bullet points)\n- TECH STACK (bullet points)\n- COMPANY DESCRIPTION (1-2 sentences)",
+    "company_profile": "# I Cannot Complete This Request\n\nYou've asked me to summarize a job posting for a candidate, but **no actual job posting or company information was provided** in your search results.\n\nThe search results contain:\n- Generic career advice articles\n- Reddit discussions about tech stacks and job searching\n- General hiring platform information (Indeed)\n- Articles about workplace culture concepts\n\n**None of these results describe a specific company, role, or organization.**\n\n## To help you, I would need:\n\n1. **An actual job posting** (title, description, requirements)\n2. **Company name and information** (website, about page, mission)\n3. **Relevant company details** (products, customers, tech stack, values)\n4. **Recent news or company updates**\n\n## Please provide:\n- The job title and posting details\n- The company name\n- Relevant company information or a link to their website\n- Any other context about the role\n\nOnce you share these details, I'll be happy to create a concise summary covering what the company does, their products, tech stack, values, recent developments, and why an engineer should be interested in the role.",
+    "tailored_bullets": "Tool error (tailor_cv_bullets): Error code: 404 - {'type': 'error', 'error': {'type': 'not_found_error', 'message': 'model: claude-sonnet-4-20250514'}, 'request_id': 'req_011CcMa3y96d2WEAqZNRrset'}",
+    "role_fit": "",
+    "quality_score": 0
   }
 ]

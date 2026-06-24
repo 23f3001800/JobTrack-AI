@@ -1,17 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { searchJobs, runAgent, type StreamStep } from "@/lib/api";
+import { useToast } from "@/components/Toast";
 
 /**
- * Job Search Page — discover jobs via web search.
+ * Unified Search & Apply Page — discover jobs + run the AI agent.
  *
- * WHY a dedicated search page instead of just the URL input?
- * Users don't always have a job URL. This page lets them search
- * by keywords + location, see results as cards, and either:
- * 1. Run the agent directly on a result
- * 2. Save a job to their pipeline for later
+ * WHY merge search and apply into one page?
+ * Users flow naturally from searching → picking a job → applying.
+ * A single page with tab toggle removes friction. Clicking "Apply"
+ * on a search result switches to apply mode with the URL pre-filled.
  *
- * Uses POST /jobs/search which calls DuckDuckGo under the hood.
+ * Modes:
+ * - search: keyword + location search with result cards
+ * - apply:  paste/pre-fill a job URL and run the multi-agent pipeline
  */
 
 /** Source platform → emoji icon mapping */
@@ -26,6 +30,23 @@ const SOURCE_ICONS: Record<string, string> = {
   web: "🌐",
 };
 
+/** Map agent step names to emoji icons */
+const STEP_ICONS: Record<string, string> = {
+  scraping: "🔍",
+  researching: "🏢",
+  writing: "✍️",
+  quality: "⭐",
+  "Job analysis": "🔍",
+  "Company research": "🏢",
+  "Role fit analysis": "🎯",
+  "CV tailoring": "📝",
+  "Cover letter": "✉️",
+  "LinkedIn DM": "💬",
+  "Application logged": "✅",
+  complete: "✅",
+  error: "❌",
+};
+
 interface SearchResult {
   title: string;
   url: string;
@@ -33,262 +54,485 @@ interface SearchResult {
   source: string;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export default function SearchApplyPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { toast } = useToast();
 
-export default function SearchPage() {
+  // Determine initial mode from ?mode= query param
+  const initialMode = searchParams.get("mode") === "apply" ? "apply" : "search";
+  const initialUrl = searchParams.get("url") || "";
+
+  const [mode, setMode] = useState<"search" | "apply">(initialMode as "search" | "apply");
+
+  // ── Search state ──
   const [query, setQuery] = useState("");
   const [location, setLocation] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [savedUrls, setSavedUrls] = useState<Set<string>>(new Set());
 
+  // ── Apply state ──
+  const [jobUrl, setJobUrl] = useState(initialUrl);
+  const [steps, setSteps] = useState<StreamStep[]>([]);
+  const [running, setRunning] = useState(false);
+  const [agentError, setAgentError] = useState("");
+
+  // Sync URL param on mount
+  useEffect(() => {
+    if (initialUrl) {
+      setJobUrl(initialUrl);
+      setMode("apply");
+    }
+  }, [initialUrl]);
+
+  // ── Search handler ──
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim()) return;
 
-    setLoading(true);
+    setSearchLoading(true);
     setSearched(true);
 
     try {
-      const token = localStorage.getItem("jt_access_token") || "";
-      const res = await fetch(`${API_BASE}/jobs/search`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          query: query.trim(),
-          location: location.trim(),
-          max_results: 15,
-        }),
-      });
-
-      if (!res.ok) throw new Error("Search failed");
-      const data = await res.json();
+      const data = await searchJobs(query.trim(), location.trim(), 15);
       setResults(data.results || []);
     } catch {
       setResults([]);
+      toast("Search failed — try again", "error");
     } finally {
-      setLoading(false);
+      setSearchLoading(false);
     }
   };
 
-  /** Save a job to the user's pipeline */
-  const handleSave = async (result: SearchResult) => {
+  /** Switch to apply mode with a pre-filled URL from search results */
+  const handleApplyFromResult = (url: string) => {
+    setJobUrl(url);
+    setMode("apply");
+    setSteps([]);
+    setAgentError("");
+    toast("Job URL loaded — click Run Agent to apply", "info");
+  };
+
+  // ── Agent runner ──
+  const handleRunAgent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!jobUrl.trim()) return;
+
+    setAgentError("");
+    setSteps([]);
+    setRunning(true);
+
     try {
-      const token = localStorage.getItem("jt_access_token") || "";
-      await fetch(`${API_BASE}/jobs/save`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          url: result.url,
-          title: result.title,
-          source: result.source,
-        }),
-      });
-      setSavedUrls((prev) => new Set([...Array.from(prev), result.url]));
-    } catch {
-      // Silent fail
+      await runAgent(
+        jobUrl.trim(),
+        "", // Empty — backend auto-fetches profile
+        (step) => {
+          setSteps((prev) => [...prev, step]);
+        }
+      );
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Pipeline failed";
+      setAgentError(message);
+    } finally {
+      setRunning(false);
     }
   };
+
+  const isComplete = steps.some((s) => s.step === "complete");
 
   return (
     <div className="animate-fade-in">
       {/* Page header */}
       <div className="page-header">
-        <h1>🔍 Search Jobs</h1>
-        <p>Discover job postings across the web</p>
+        <h1>🔍 Search & Apply</h1>
+        <p>Discover jobs and apply with AI-powered materials</p>
       </div>
 
-      {/* Search form */}
+      {/* ──────── Tab Toggle ──────── */}
       <div
-        className="glass-card"
-        style={{ padding: "var(--space-xl)", maxWidth: 700 }}
+        style={{
+          display: "flex",
+          gap: "var(--space-sm)",
+          marginBottom: "var(--space-xl)",
+        }}
       >
-        <form
-          onSubmit={handleSearch}
-          style={{ display: "flex", gap: "var(--space-md)", flexWrap: "wrap" }}
+        <button
+          className={`btn ${mode === "search" ? "btn-primary" : "btn-ghost"}`}
+          onClick={() => setMode("search")}
+          disabled={running}
         >
-          <div style={{ flex: "2 1 250px" }}>
-            <label className="input-label" htmlFor="search-query">
-              Keywords
-            </label>
-            <input
-              id="search-query"
-              className="input"
-              type="text"
-              placeholder="Python AI engineer, React developer..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              required
-              disabled={loading}
-            />
-          </div>
-
-          <div style={{ flex: "1 1 150px" }}>
-            <label className="input-label" htmlFor="search-location">
-              Location
-            </label>
-            <input
-              id="search-location"
-              className="input"
-              type="text"
-              placeholder="Remote, London..."
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              disabled={loading}
-            />
-          </div>
-
-          <div
-            style={{
-              flex: "0 0 auto",
-              display: "flex",
-              alignItems: "flex-end",
-            }}
-          >
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={loading || !query.trim()}
-            >
-              {loading ? "Searching..." : "🔍 Search"}
-            </button>
-          </div>
-        </form>
+          🔍 Search Jobs
+        </button>
+        <button
+          className={`btn ${mode === "apply" ? "btn-primary" : "btn-ghost"}`}
+          onClick={() => setMode("apply")}
+          disabled={running}
+        >
+          🚀 Apply to Job
+        </button>
       </div>
 
-      {/* Results */}
-      {loading && (
-        <div style={{ marginTop: "var(--space-xl)" }}>
-          {[1, 2, 3, 4].map((i) => (
-            <div
-              key={i}
-              className="skeleton"
-              style={{ height: 100, marginBottom: "var(--space-md)", maxWidth: 700 }}
-            />
-          ))}
-        </div>
-      )}
-
-      {!loading && searched && results.length === 0 && (
-        <div
-          style={{
-            textAlign: "center",
-            padding: "var(--space-2xl)",
-            color: "var(--text-tertiary)",
-          }}
-        >
-          <p style={{ fontSize: "2rem", marginBottom: "var(--space-sm)" }}>🔍</p>
-          <p>No results found. Try different keywords or a broader search.</p>
-        </div>
-      )}
-
-      {!loading && results.length > 0 && (
-        <div style={{ marginTop: "var(--space-xl)", maxWidth: 700 }}>
-          <h2
-            style={{
-              fontSize: "1.125rem",
-              fontWeight: 600,
-              marginBottom: "var(--space-md)",
-            }}
+      {/* ──────── SEARCH MODE ──────── */}
+      {mode === "search" && (
+        <>
+          {/* Search form */}
+          <div
+            className="glass-card"
+            style={{ padding: "var(--space-xl)", maxWidth: 700 }}
           >
-            Found {results.length} jobs
-          </h2>
+            <form
+              onSubmit={handleSearch}
+              style={{
+                display: "flex",
+                gap: "var(--space-md)",
+                flexWrap: "wrap",
+              }}
+            >
+              <div style={{ flex: "2 1 250px" }}>
+                <label className="input-label" htmlFor="search-query">
+                  Keywords
+                </label>
+                <input
+                  id="search-query"
+                  className="input"
+                  type="text"
+                  placeholder="Python AI engineer, React developer..."
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  required
+                  disabled={searchLoading}
+                />
+              </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-md)" }}>
-            {results.map((result, i) => {
-              const isSaved = savedUrls.has(result.url);
-              return (
+              <div style={{ flex: "1 1 150px" }}>
+                <label className="input-label" htmlFor="search-location">
+                  Location
+                </label>
+                <input
+                  id="search-location"
+                  className="input"
+                  type="text"
+                  placeholder="Remote, London..."
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  disabled={searchLoading}
+                />
+              </div>
+
+              <div
+                style={{
+                  flex: "0 0 auto",
+                  display: "flex",
+                  alignItems: "flex-end",
+                }}
+              >
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={searchLoading || !query.trim()}
+                >
+                  {searchLoading ? "Searching..." : "🔍 Search"}
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Search results */}
+          {searchLoading && (
+            <div style={{ marginTop: "var(--space-xl)" }}>
+              {[1, 2, 3, 4].map((i) => (
                 <div
                   key={i}
-                  className="glass-card"
-                  style={{ padding: "var(--space-lg)" }}
-                >
-                  {/* Header: source icon + title */}
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                      gap: "var(--space-md)",
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "var(--space-sm)",
-                          marginBottom: "var(--space-xs)",
-                        }}
-                      >
-                        <span>{SOURCE_ICONS[result.source] || "🌐"}</span>
-                        <span
-                          className="badge badge-applied"
-                          style={{ textTransform: "capitalize" }}
-                        >
-                          {result.source}
-                        </span>
-                      </div>
-                      <h3
-                        style={{
-                          fontSize: "0.9375rem",
-                          fontWeight: 600,
-                          marginBottom: "var(--space-xs)",
-                        }}
-                      >
-                        {result.title}
-                      </h3>
-                      <p
-                        style={{
-                          fontSize: "0.8125rem",
-                          color: "var(--text-secondary)",
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        {result.snippet}
-                      </p>
-                    </div>
+                  className="skeleton"
+                  style={{
+                    height: 100,
+                    marginBottom: "var(--space-md)",
+                    maxWidth: 700,
+                  }}
+                />
+              ))}
+            </div>
+          )}
 
-                    {/* Actions */}
+          {!searchLoading && searched && results.length === 0 && (
+            <div
+              style={{
+                textAlign: "center",
+                padding: "var(--space-2xl)",
+                color: "var(--text-tertiary)",
+              }}
+            >
+              <p style={{ fontSize: "2rem", marginBottom: "var(--space-sm)" }}>
+                🔍
+              </p>
+              <p>
+                No results found. Try different keywords or a broader search.
+              </p>
+            </div>
+          )}
+
+          {!searchLoading && results.length > 0 && (
+            <div style={{ marginTop: "var(--space-xl)", maxWidth: 700 }}>
+              <h2
+                style={{
+                  fontSize: "1.125rem",
+                  fontWeight: 600,
+                  marginBottom: "var(--space-md)",
+                }}
+              >
+                Found {results.length} jobs
+              </h2>
+
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "var(--space-md)",
+                }}
+              >
+                {results.map((result, i) => (
+                  <div
+                    key={i}
+                    className="glass-card"
+                    style={{ padding: "var(--space-lg)" }}
+                  >
+                    {/* Header: source icon + title */}
                     <div
                       style={{
                         display: "flex",
-                        flexDirection: "column",
-                        gap: "var(--space-xs)",
-                        flexShrink: 0,
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        gap: "var(--space-md)",
                       }}
                     >
-                      <a
-                        href={result.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn btn-ghost"
-                        style={{ fontSize: "0.75rem", padding: "0.375rem 0.625rem" }}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "var(--space-sm)",
+                            marginBottom: "var(--space-xs)",
+                          }}
+                        >
+                          <span>
+                            {SOURCE_ICONS[result.source] || "🌐"}
+                          </span>
+                          <span
+                            className="badge badge-applied"
+                            style={{ textTransform: "capitalize" }}
+                          >
+                            {result.source}
+                          </span>
+                        </div>
+                        <h3
+                          style={{
+                            fontSize: "0.9375rem",
+                            fontWeight: 600,
+                            marginBottom: "var(--space-xs)",
+                          }}
+                        >
+                          {result.title}
+                        </h3>
+                        <p
+                          style={{
+                            fontSize: "0.8125rem",
+                            color: "var(--text-secondary)",
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          {result.snippet}
+                        </p>
+                      </div>
+
+                      {/* Actions */}
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "var(--space-xs)",
+                          flexShrink: 0,
+                        }}
                       >
-                        🔗 View
-                      </a>
-                      <button
-                        className={`btn ${isSaved ? "btn-ghost" : "btn-primary"}`}
-                        onClick={() => handleSave(result)}
-                        disabled={isSaved}
-                        style={{ fontSize: "0.75rem", padding: "0.375rem 0.625rem" }}
-                      >
-                        {isSaved ? "✅ Saved" : "💾 Save"}
-                      </button>
+                        <a
+                          href={result.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn btn-ghost"
+                          style={{
+                            fontSize: "0.75rem",
+                            padding: "0.375rem 0.625rem",
+                          }}
+                        >
+                          🔗 View
+                        </a>
+                        <button
+                          className="btn btn-primary"
+                          onClick={() => handleApplyFromResult(result.url)}
+                          style={{
+                            fontSize: "0.75rem",
+                            padding: "0.375rem 0.625rem",
+                          }}
+                        >
+                          🚀 Apply
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ──────── APPLY MODE ──────── */}
+      {mode === "apply" && (
+        <>
+          {/* Job URL form */}
+          <div
+            className="glass-card"
+            style={{ padding: "var(--space-xl)", maxWidth: 700 }}
+          >
+            <form onSubmit={handleRunAgent}>
+              <div style={{ marginBottom: "var(--space-lg)" }}>
+                <label className="input-label" htmlFor="job-url">
+                  Job Posting URL
+                </label>
+                <input
+                  id="job-url"
+                  className="input"
+                  type="url"
+                  placeholder="https://linkedin.com/jobs/view/..."
+                  value={jobUrl}
+                  onChange={(e) => setJobUrl(e.target.value)}
+                  required
+                  disabled={running}
+                />
+                <p
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "var(--text-tertiary)",
+                    marginTop: "var(--space-xs)",
+                  }}
+                >
+                  Your profile and resume from Settings will be used
+                  automatically.
+                </p>
+              </div>
+
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={running || !jobUrl.trim()}
+                style={{ width: "100%" }}
+              >
+                {running
+                  ? "⏳ Agents working..."
+                  : "🚀 Run Multi-Agent Pipeline"}
+              </button>
+            </form>
           </div>
-        </div>
+
+          {/* Error message */}
+          {agentError && (
+            <div
+              className="error-msg"
+              style={{ maxWidth: 700, marginTop: "var(--space-md)" }}
+            >
+              {agentError}
+            </div>
+          )}
+
+          {/* Streaming progress */}
+          {steps.length > 0 && (
+            <div style={{ maxWidth: 700, marginTop: "var(--space-xl)" }}>
+              <h2
+                style={{
+                  fontSize: "1.125rem",
+                  fontWeight: 600,
+                  marginBottom: "var(--space-md)",
+                }}
+              >
+                {isComplete ? "✅ Pipeline Complete" : "⏳ Agent Progress"}
+              </h2>
+
+              <div className="stream-steps">
+                {steps.map((step, i) => (
+                  <div className="stream-step" key={i}>
+                    {/* Step icon */}
+                    <div
+                      className={`step-icon ${
+                        step.status === "done" ? "done" : "loading"
+                      }`}
+                    >
+                      {STEP_ICONS[step.step] || "⚡"}
+                    </div>
+
+                    {/* Step details */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="step-label">{step.step}</div>
+                      {step.preview && (
+                        <div className="step-preview">{step.preview}</div>
+                      )}
+                      {step.message && (
+                        <div
+                          className="step-preview"
+                          style={{ color: "var(--quality-low)" }}
+                        >
+                          {step.message}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+
+                {/* Loading indicator when still running */}
+                {running && (
+                  <div className="stream-step">
+                    <div className="step-icon loading">⏳</div>
+                    <div style={{ flex: 1 }}>
+                      <div
+                        className="step-label"
+                        style={{ color: "var(--text-secondary)" }}
+                      >
+                        Waiting for next agent...
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Actions after completion */}
+              {isComplete && (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "var(--space-md)",
+                    marginTop: "var(--space-xl)",
+                  }}
+                >
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => router.push("/dashboard/tracker")}
+                  >
+                    📋 View in Tracker
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => {
+                      setSteps([]);
+                      setJobUrl("");
+                      setAgentError("");
+                    }}
+                  >
+                    🚀 Run Another
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

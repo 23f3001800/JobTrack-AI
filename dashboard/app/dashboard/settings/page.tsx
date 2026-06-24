@@ -1,110 +1,140 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { getProfile, updateProfile, uploadResume } from "@/lib/api";
+import { useToast } from "@/components/Toast";
 
 /**
- * Settings Page — manage user profile, CV, and API settings.
+ * Settings Page — manage user profile, CV upload, and professional info.
  *
  * WHY a settings page?
- * The agent needs the user's name, email, phone, and CV path
- * to generate personalized resumes and cover letters. Without
- * this page, users have to manually edit .env files.
+ * The agent needs the user's name, email, phone, skills, and CV text
+ * to generate personalized resumes and cover letters. Without this
+ * page, users have to manually edit .env files.
  *
- * Also provides a place to view API key, toggle dark mode, etc.
+ * Sections:
+ * 1. Profile — personal details (full_name, email, phone, links)
+ * 2. Professional — background summary and skills tags
+ * 3. Resume — PDF upload with extracted text preview
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
 interface UserProfile {
-  name: string;
+  full_name: string;
   email: string;
+  background: string;
+  skills: string[];
+  cv_text: string;
   phone: string;
-  cv_path: string;
   linkedin_url: string;
   github_url: string;
-  default_location: string;
 }
 
+const EMPTY_PROFILE: UserProfile = {
+  full_name: "",
+  email: "",
+  background: "",
+  skills: [],
+  cv_text: "",
+  phone: "",
+  linkedin_url: "",
+  github_url: "",
+};
+
 export default function SettingsPage() {
-  const [profile, setProfile] = useState<UserProfile>({
-    name: "",
-    email: "",
-    phone: "",
-    cv_path: "",
-    linkedin_url: "",
-    github_url: "",
-    default_location: "",
-  });
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [profile, setProfile] = useState<UserProfile>(EMPTY_PROFILE);
+  const [skillsInput, setSkillsInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [apiKey, setApiKey] = useState("");
-  const [showKey, setShowKey] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [showCvPreview, setShowCvPreview] = useState(false);
 
   // Load profile on mount
   useEffect(() => {
     const load = async () => {
       try {
-        const token = localStorage.getItem("jt_access_token") || "";
-        const res = await fetch(`${API_BASE}/auth/profile`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setProfile({
-            name: data.name || "",
-            email: data.email || "",
-            phone: data.phone || "",
-            cv_path: data.cv_path || "",
-            linkedin_url: data.linkedin_url || "",
-            github_url: data.github_url || "",
-            default_location: data.default_location || "",
-          });
-        }
+        const data = await getProfile() as Record<string, unknown>;
+        const p: UserProfile = {
+          full_name: (data.full_name as string) || "",
+          email: (data.email as string) || "",
+          background: (data.background as string) || "",
+          skills: Array.isArray(data.skills) ? (data.skills as string[]) : [],
+          cv_text: (data.cv_text as string) || "",
+          phone: (data.phone as string) || "",
+          linkedin_url: (data.linkedin_url as string) || "",
+          github_url: (data.github_url as string) || "",
+        };
+        setProfile(p);
+        setSkillsInput(p.skills.join(", "));
       } catch {
-        // Will use empty defaults
+        toast("Failed to load profile", "error");
       } finally {
         setLoading(false);
       }
     };
     load();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Load API key from localStorage
-    const key = localStorage.getItem("jt_api_key");
-    if (key) setApiKey(key);
-  }, []);
-
+  /** Save profile to backend */
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    setSaved(false);
+
+    // Parse comma-separated skills into array
+    const skills = skillsInput
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
 
     try {
-      const token = localStorage.getItem("jt_access_token") || "";
-      const res = await fetch(`${API_BASE}/auth/profile`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(profile),
+      await updateProfile({
+        full_name: profile.full_name,
+        phone: profile.phone,
+        linkedin_url: profile.linkedin_url,
+        github_url: profile.github_url,
+        background: profile.background,
+        skills,
       });
-      if (res.ok) {
-        setSaved(true);
-        // Auto-hide success message after 3 seconds
-        setTimeout(() => setSaved(false), 3000);
-      }
-    } catch {
-      // Silent fail
+      setProfile((prev) => ({ ...prev, skills }));
+      toast("Profile saved!", "success");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Save failed";
+      toast(msg, "error");
     } finally {
       setSaving(false);
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("jt_access_token");
-    localStorage.removeItem("jt_api_key");
-    window.location.href = "/login";
+  /** Handle resume PDF upload */
+  const handleFileUpload = async (file: File) => {
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
+      toast("Please upload a PDF file", "warning");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast("File too large (max 10 MB)", "warning");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const result = await uploadResume(file);
+      setProfile((prev) => ({ ...prev, cv_text: result.cv_text }));
+      toast("Resume uploaded and parsed!", "success");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Upload failed";
+      toast(msg, "error");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleFileUpload(file);
   };
 
   return (
@@ -112,11 +142,11 @@ export default function SettingsPage() {
       {/* Page header */}
       <div className="page-header">
         <h1>⚙️ Settings</h1>
-        <p>Manage your profile, CV, and preferences</p>
+        <p>Manage your profile, skills, and resume</p>
       </div>
 
       {loading ? (
-        <div style={{ maxWidth: 600 }}>
+        <div style={{ maxWidth: 640 }}>
           {[1, 2, 3].map((i) => (
             <div
               key={i}
@@ -126,15 +156,16 @@ export default function SettingsPage() {
           ))}
         </div>
       ) : (
-        <div
+        <form
+          onSubmit={handleSave}
           style={{
             display: "flex",
             flexDirection: "column",
             gap: "var(--space-xl)",
-            maxWidth: 600,
+            maxWidth: 640,
           }}
         >
-          {/* Profile Section */}
+          {/* ──────── Profile Section ──────── */}
           <div className="glass-card" style={{ padding: "var(--space-xl)" }}>
             <h2
               style={{
@@ -145,8 +176,8 @@ export default function SettingsPage() {
             >
               👤 Profile
             </h2>
-            <form
-              onSubmit={handleSave}
+
+            <div
               style={{
                 display: "flex",
                 flexDirection: "column",
@@ -162,11 +193,34 @@ export default function SettingsPage() {
                   className="input"
                   type="text"
                   placeholder="Jane Doe"
-                  value={profile.name}
+                  value={profile.full_name}
                   onChange={(e) =>
-                    setProfile({ ...profile, name: e.target.value })
+                    setProfile({ ...profile, full_name: e.target.value })
                   }
                 />
+              </div>
+
+              <div>
+                <label className="input-label" htmlFor="s-email">
+                  Email
+                </label>
+                <input
+                  id="s-email"
+                  className="input"
+                  type="email"
+                  value={profile.email}
+                  readOnly
+                  style={{ opacity: 0.6, cursor: "not-allowed" }}
+                />
+                <p
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "var(--text-tertiary)",
+                    marginTop: "var(--space-xs)",
+                  }}
+                >
+                  Email cannot be changed
+                </p>
               </div>
 
               <div
@@ -176,21 +230,6 @@ export default function SettingsPage() {
                   gap: "var(--space-md)",
                 }}
               >
-                <div>
-                  <label className="input-label" htmlFor="s-email">
-                    Email
-                  </label>
-                  <input
-                    id="s-email"
-                    className="input"
-                    type="email"
-                    placeholder="jane@example.com"
-                    value={profile.email}
-                    onChange={(e) =>
-                      setProfile({ ...profile, email: e.target.value })
-                    }
-                  />
-                </div>
                 <div>
                   <label className="input-label" htmlFor="s-phone">
                     Phone
@@ -206,41 +245,6 @@ export default function SettingsPage() {
                     }
                   />
                 </div>
-              </div>
-
-              <div>
-                <label className="input-label" htmlFor="s-cv">
-                  CV File Path
-                </label>
-                <input
-                  id="s-cv"
-                  className="input"
-                  type="text"
-                  placeholder="/path/to/your/cv.pdf"
-                  value={profile.cv_path}
-                  onChange={(e) =>
-                    setProfile({ ...profile, cv_path: e.target.value })
-                  }
-                />
-                <p
-                  style={{
-                    fontSize: "0.75rem",
-                    color: "var(--text-tertiary)",
-                    marginTop: "var(--space-xs)",
-                  }}
-                >
-                  Path to your master CV (PDF). The agent reads this to tailor
-                  bullets.
-                </p>
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: "var(--space-md)",
-                }}
-              >
                 <div>
                   <label className="input-label" htmlFor="s-linkedin">
                     LinkedIn URL
@@ -256,73 +260,27 @@ export default function SettingsPage() {
                     }
                   />
                 </div>
-                <div>
-                  <label className="input-label" htmlFor="s-github">
-                    GitHub URL
-                  </label>
-                  <input
-                    id="s-github"
-                    className="input"
-                    type="url"
-                    placeholder="https://github.com/janedoe"
-                    value={profile.github_url}
-                    onChange={(e) =>
-                      setProfile({ ...profile, github_url: e.target.value })
-                    }
-                  />
-                </div>
               </div>
 
               <div>
-                <label className="input-label" htmlFor="s-location">
-                  Default Job Location
+                <label className="input-label" htmlFor="s-github">
+                  GitHub URL
                 </label>
                 <input
-                  id="s-location"
+                  id="s-github"
                   className="input"
-                  type="text"
-                  placeholder="Remote, London, San Francisco..."
-                  value={profile.default_location}
+                  type="url"
+                  placeholder="https://github.com/janedoe"
+                  value={profile.github_url}
                   onChange={(e) =>
-                    setProfile({
-                      ...profile,
-                      default_location: e.target.value,
-                    })
+                    setProfile({ ...profile, github_url: e.target.value })
                   }
                 />
               </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "var(--space-md)",
-                  marginTop: "var(--space-sm)",
-                }}
-              >
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={saving}
-                >
-                  {saving ? "Saving..." : "💾 Save Profile"}
-                </button>
-                {saved && (
-                  <span
-                    style={{
-                      color: "var(--success)",
-                      fontSize: "0.875rem",
-                      fontWeight: 500,
-                    }}
-                  >
-                    ✅ Profile saved!
-                  </span>
-                )}
-              </div>
-            </form>
+            </div>
           </div>
 
-          {/* API Key Section */}
+          {/* ──────── Professional Section ──────── */}
           <div className="glass-card" style={{ padding: "var(--space-xl)" }}>
             <h2
               style={{
@@ -331,8 +289,101 @@ export default function SettingsPage() {
                 marginBottom: "var(--space-lg)",
               }}
             >
-              🔑 API Key
+              💼 Professional
             </h2>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--space-md)",
+              }}
+            >
+              <div>
+                <label className="input-label" htmlFor="s-background">
+                  Background Summary
+                </label>
+                <textarea
+                  id="s-background"
+                  className="input"
+                  placeholder="e.g. 5 years full-stack developer specializing in React, Node.js, and cloud architecture..."
+                  value={profile.background}
+                  onChange={(e) =>
+                    setProfile({ ...profile, background: e.target.value })
+                  }
+                  rows={4}
+                  style={{ resize: "vertical" }}
+                />
+                <p
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "var(--text-tertiary)",
+                    marginTop: "var(--space-xs)",
+                  }}
+                >
+                  Brief summary of your experience. The AI agent uses this to
+                  tailor applications.
+                </p>
+              </div>
+
+              <div>
+                <label className="input-label" htmlFor="s-skills">
+                  Skills{" "}
+                  <span
+                    style={{ color: "var(--text-tertiary)", fontWeight: 400 }}
+                  >
+                    (comma-separated)
+                  </span>
+                </label>
+                <input
+                  id="s-skills"
+                  className="input"
+                  type="text"
+                  placeholder="Python, React, TypeScript, Docker, AWS..."
+                  value={skillsInput}
+                  onChange={(e) => setSkillsInput(e.target.value)}
+                />
+                {/* Skills preview tags */}
+                {skillsInput.trim() && (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 6,
+                      marginTop: "var(--space-sm)",
+                    }}
+                  >
+                    {skillsInput
+                      .split(",")
+                      .map((s) => s.trim())
+                      .filter(Boolean)
+                      .map((skill, i) => (
+                        <span
+                          key={i}
+                          className="badge badge-applied"
+                          style={{ fontSize: "0.75rem" }}
+                        >
+                          {skill}
+                        </span>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* ──────── Resume Section ──────── */}
+          <div className="glass-card" style={{ padding: "var(--space-xl)" }}>
+            <h2
+              style={{
+                fontSize: "1.125rem",
+                fontWeight: 600,
+                marginBottom: "var(--space-lg)",
+              }}
+            >
+              📄 Resume / CV
+            </h2>
+
             <p
               style={{
                 fontSize: "0.8125rem",
@@ -340,63 +391,144 @@ export default function SettingsPage() {
                 marginBottom: "var(--space-md)",
               }}
             >
-              Use this key for CLI or MCP access. Keep it secret.
+              Upload your master resume (PDF). The AI agent reads the extracted
+              text to tailor cover letters and bullets for each application.
             </p>
+
+            {/* Upload drop zone */}
             <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
               style={{
-                display: "flex",
-                gap: "var(--space-sm)",
-                alignItems: "center",
+                border: "2px dashed rgba(255, 255, 255, 0.15)",
+                borderRadius: 12,
+                padding: "var(--space-xl) var(--space-lg)",
+                textAlign: "center",
+                cursor: uploading ? "wait" : "pointer",
+                transition: "border-color 0.2s, background 0.2s",
+                background: "rgba(255, 255, 255, 0.02)",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLDivElement).style.borderColor =
+                  "rgba(99, 102, 241, 0.5)";
+                (e.currentTarget as HTMLDivElement).style.background =
+                  "rgba(99, 102, 241, 0.05)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLDivElement).style.borderColor =
+                  "rgba(255, 255, 255, 0.15)";
+                (e.currentTarget as HTMLDivElement).style.background =
+                  "rgba(255, 255, 255, 0.02)";
               }}
             >
               <input
-                className="input"
-                type={showKey ? "text" : "password"}
-                value={apiKey || "No API key stored"}
-                readOnly
-                style={{ flex: 1, fontFamily: "monospace", fontSize: "0.8125rem" }}
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFileUpload(file);
+                  e.target.value = "";
+                }}
+                disabled={uploading}
               />
-              <button
-                className="btn btn-ghost"
-                onClick={() => setShowKey(!showKey)}
-                style={{ fontSize: "0.75rem" }}
-              >
-                {showKey ? "🙈 Hide" : "👁️ Show"}
-              </button>
+
+              {uploading ? (
+                <div>
+                  <p style={{ fontSize: "2rem", marginBottom: "var(--space-sm)" }}>
+                    ⏳
+                  </p>
+                  <p style={{ color: "var(--text-secondary)" }}>
+                    Uploading and parsing resume...
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <p style={{ fontSize: "2rem", marginBottom: "var(--space-sm)" }}>
+                    📤
+                  </p>
+                  <p style={{ fontWeight: 500, marginBottom: "var(--space-xs)" }}>
+                    Click to upload or drag and drop
+                  </p>
+                  <p
+                    style={{
+                      fontSize: "0.75rem",
+                      color: "var(--text-tertiary)",
+                    }}
+                  >
+                    PDF only · Max 10 MB
+                  </p>
+                </div>
+              )}
             </div>
+
+            {/* CV text preview */}
+            {profile.cv_text && (
+              <div style={{ marginTop: "var(--space-lg)" }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => setShowCvPreview(!showCvPreview)}
+                  style={{ fontSize: "0.8125rem", padding: "0.375rem 0.75rem" }}
+                >
+                  {showCvPreview ? "🔽 Hide CV Preview" : "▶️ Show CV Preview"}
+                </button>
+
+                {showCvPreview && (
+                  <pre
+                    style={{
+                      marginTop: "var(--space-sm)",
+                      padding: "var(--space-md)",
+                      background: "rgba(0, 0, 0, 0.25)",
+                      borderRadius: 8,
+                      fontSize: "0.75rem",
+                      lineHeight: 1.6,
+                      color: "var(--text-secondary)",
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                      maxHeight: 300,
+                      overflow: "auto",
+                    }}
+                  >
+                    {profile.cv_text.slice(0, 500)}
+                    {profile.cv_text.length > 500 && "\n\n... (truncated)"}
+                  </pre>
+                )}
+
+                <p
+                  style={{
+                    fontSize: "0.75rem",
+                    color: "var(--text-tertiary)",
+                    marginTop: "var(--space-xs)",
+                  }}
+                >
+                  ✅ Resume on file —{" "}
+                  {profile.cv_text.length.toLocaleString()} characters extracted
+                </p>
+              </div>
+            )}
           </div>
 
-          {/* Danger Zone */}
+          {/* ──────── Save Button ──────── */}
           <div
-            className="glass-card"
             style={{
-              padding: "var(--space-xl)",
-              borderColor: "rgba(239, 68, 68, 0.3)",
+              display: "flex",
+              alignItems: "center",
+              gap: "var(--space-md)",
             }}
           >
-            <h2
-              style={{
-                fontSize: "1.125rem",
-                fontWeight: 600,
-                marginBottom: "var(--space-md)",
-                color: "var(--error)",
-              }}
-            >
-              ⚠️ Danger Zone
-            </h2>
             <button
-              className="btn"
-              onClick={handleLogout}
-              style={{
-                background: "rgba(239, 68, 68, 0.15)",
-                color: "var(--error)",
-                border: "1px solid rgba(239, 68, 68, 0.3)",
-              }}
+              type="submit"
+              className="btn btn-primary"
+              disabled={saving}
+              style={{ minWidth: 160 }}
             >
-              🚪 Log Out
+              {saving ? "Saving..." : "💾 Save Profile"}
             </button>
           </div>
-        </div>
+        </form>
       )}
     </div>
   );

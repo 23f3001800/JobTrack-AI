@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getApplications, updateStatus, deleteApplication, type Application } from "@/lib/api";
+import { getApplications, updateStatus, deleteApplication, updateNotes, type Application } from "@/lib/api";
+import { useToast } from "@/components/Toast";
 
 /**
  * Tracker Page — application list with status management.
@@ -29,6 +30,7 @@ export default function TrackerPage() {
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("all");
+  const { toast } = useToast();
 
   useEffect(() => {
     getApplications()
@@ -52,8 +54,9 @@ export default function TrackerPage() {
             : a
         )
       );
+      toast(`Status updated to ${newStatus}`, "success");
     } catch {
-      // Silent fail — status will refresh on next load
+      toast("Failed to update status", "error");
     }
   };
 
@@ -97,6 +100,7 @@ export default function TrackerPage() {
     link.download = `jobtrack_export_${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+    toast(`Exported ${apps.length} applications`, "success");
   };
 
   return (
@@ -375,6 +379,49 @@ export default function TrackerPage() {
                             )}
                           </div>
 
+                          {/* Notes section */}
+                          <div style={{ marginTop: "var(--space-md)" }}>
+                            <h4
+                              style={{
+                                fontSize: "0.8125rem",
+                                color: "var(--text-secondary)",
+                                marginBottom: "var(--space-xs)",
+                              }}
+                            >
+                              📝 Notes
+                            </h4>
+                            <textarea
+                              className="input"
+                              placeholder="Add notes... (recruiter name, follow-up date, etc.)"
+                              defaultValue={app.notes || ""}
+                              rows={3}
+                              style={{
+                                width: "100%",
+                                resize: "vertical",
+                                fontSize: "0.8125rem",
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              onBlur={async (e) => {
+                                const newNotes = e.target.value;
+                                if (newNotes !== (app.notes || "")) {
+                                  try {
+                                    await updateNotes(appId, newNotes);
+                                    setApps((prev) =>
+                                      prev.map((a, idx) =>
+                                        (a.id || String(idx)) === appId
+                                          ? { ...a, notes: newNotes }
+                                          : a
+                                      )
+                                    );
+                                    toast("Notes saved", "success");
+                                  } catch {
+                                    toast("Failed to save notes", "error");
+                                  }
+                                }
+                              }}
+                            />
+                          </div>
+
                           {/* Delete button */}
                           <div style={{ marginTop: "var(--space-md)", textAlign: "right" }}>
                             <button
@@ -395,8 +442,9 @@ export default function TrackerPage() {
                                     )
                                   );
                                   setExpandedId(null);
+                                  toast(`Deleted ${app.company}`, "success");
                                 } catch {
-                                  // Silent fail
+                                  toast("Failed to delete", "error");
                                 }
                               }}
                             >

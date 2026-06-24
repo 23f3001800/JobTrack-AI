@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
-import { isLoggedIn, clearTokens } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { isLoggedIn, clearTokens, getCurrentUser } from "@/lib/api";
 
 /**
  * Dashboard Layout — sidebar navigation + main content area.
@@ -13,17 +13,20 @@ import { isLoggedIn, clearTokens } from "@/lib/api";
  * should be full-screen. Next.js nested layouts let us split
  * these concerns cleanly.
  *
- * The sidebar is fixed-position with nav links. Active state
- * is determined by comparing the current pathname.
+ * Mobile: sidebar slides in from the left with a hamburger toggle.
+ * An overlay backdrop dims the main content when sidebar is open.
  */
 
-/** Navigation items with emoji icons (no icon library needed) */
-const NAV_ITEMS = [
+/** Navigation items shown to every authenticated user */
+const USER_NAV = [
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
-  { href: "/dashboard/new", label: "New Application", icon: "🚀" },
-  { href: "/dashboard/search", label: "Search Jobs", icon: "🔍" },
+  { href: "/dashboard/search", label: "Search & Apply", icon: "🔍" },
   { href: "/dashboard/tracker", label: "Tracker", icon: "📋" },
   { href: "/dashboard/settings", label: "Settings", icon: "⚙️" },
+];
+
+/** Admin-only navigation items */
+const ADMIN_NAV = [
   { href: "/dashboard/admin", label: "Admin", icon: "🛡️" },
 ];
 
@@ -34,6 +37,7 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -42,15 +46,45 @@ export default function DashboardLayout({
     }
   }, [router]);
 
+  // Close sidebar on route change (mobile)
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
+
   const handleLogout = () => {
     clearTokens();
     router.push("/login");
   };
 
+  // Build nav items based on user role
+  const user = getCurrentUser();
+  const navItems = user?.role === "admin" ? [...USER_NAV, ...ADMIN_NAV] : USER_NAV;
+
   return (
     <div className="layout">
+      {/* ──────── Mobile Header ──────── */}
+      <div className="mobile-header">
+        <button
+          className="hamburger-btn"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="Open menu"
+        >
+          ☰
+        </button>
+        <Link href="/dashboard" style={{ textDecoration: "none", color: "var(--text-primary)", fontWeight: 600 }}>
+          🎯 JobTrack AI
+        </Link>
+        <div style={{ width: 32 }} /> {/* Spacer for centering */}
+      </div>
+
+      {/* ──────── Sidebar Overlay (mobile) ──────── */}
+      <div
+        className={`sidebar-overlay ${sidebarOpen ? "visible" : ""}`}
+        onClick={() => setSidebarOpen(false)}
+      />
+
       {/* ──────── Sidebar ──────── */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
         {/* Logo */}
         <Link href="/dashboard" className="sidebar-logo">
           🎯 <span>JobTrack AI</span>
@@ -59,7 +93,7 @@ export default function DashboardLayout({
         {/* Navigation */}
         <nav>
           <ul className="sidebar-nav">
-            {NAV_ITEMS.map((item) => (
+            {navItems.map((item) => (
               <li key={item.href}>
                 <Link
                   href={item.href}

@@ -88,17 +88,21 @@ async def run_agent(request: Request, body: RunRequest,
     """
     thread_id = body.job_url.split("/")[-1] + "-" + str(uuid.uuid4())[:4]
 
-    # If user is JWT-authenticated, use their background from profile
+    # If user is JWT-authenticated, use their profile data
     background = body.user_background
-    if user.is_authenticated and not body.user_background:
+    cv_text = ""
+    if user.is_authenticated:
         from db import get_db
         profile = get_db().get_profile(user.user_id)
-        background = profile.get("background", body.user_background)
+        if not body.user_background:
+            background = profile.get("background", body.user_background)
+        cv_text = profile.get("cv_text", "")
 
     # Initialize all state fields — new multi-agent fields include
     # role_fit (Research agent) and quality loop tracking.
     initial = JobState(
         job_url=body.job_url, user_background=background,
+        cv_text=cv_text,
         job_analysis="", company_profile="", role_fit="",
         tailored_bullets="", cover_letter="", outreach_dm="",
         quality_score=0, quality_feedback="", quality_attempts=0,
@@ -222,6 +226,52 @@ async def delete_application(app_id: str,
     except Exception as e:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=str(e))
+
+
+class NotesUpdate(BaseModel):
+    notes: str = Field(default="", max_length=5000)
+
+
+@app.patch("/tracker/{app_id}/notes", tags=["tracker"])
+async def update_notes(app_id: str, body: NotesUpdate,
+                       user: AuthUser = Depends(verify_user)):
+    """Update an application's notes/comments.
+
+    WHY a dedicated notes endpoint?
+    Notes are free-form text that users add manually (recruiter name,
+    interview date, follow-up reminders). Separating from status
+    lets us validate and store notes independently.
+    """
+    from db import get_db
+    db = get_db()
+
+    # JsonDB: update by index or id
+    if hasattr(db, "tracker_file"):
+        import json as _json
+        with open(db.tracker_file) as f:
+            apps = _json.load(f)
+
+        updated = False
+        for i, a in enumerate(apps):
+            if str(a.get("id", i)) == app_id or str(i) == app_id:
+                apps[i]["notes"] = body.notes
+                updated = True
+                break
+
+        if not updated:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Application not found")
+
+        with open(db.tracker_file, "w") as f:
+            _json.dump(apps, f, indent=2)
+
+        return {"message": "Notes updated", "id": app_id, "notes": body.notes}
+
+    # SupabaseDB
+    db.client.table("applications").update(
+        {"notes": body.notes}
+    ).eq("id", app_id).execute()
+    return {"message": "Notes updated", "id": app_id, "notes": body.notes}
 
 
 @app.post("/generate-pdf", tags=["pdf"])
@@ -371,9 +421,52 @@ async def export_csv(user: AuthUser = Depends(verify_user)):
     )
 
 
+class AutoFillRequest(BaseModel):
+    job_url: str
+    name: str = ""
+    email: str = ""
+    phone: str = ""
+    linkedin: str = ""
+    cover_letter: str = ""
+    resume_path: str = ""
+    headless: bool = True
+
+
+@app.post("/autofill", tags=["automation"])
+async def autofill_application(
+    body: AutoFillRequest,
+    user: AuthUser = Depends(verify_user),
+):
+    """Auto-fill a job application using Playwright browser automation.
+
+    WHY an API endpoint instead of only a tool?
+    The dashboard can trigger auto-fill with one click. The API
+    endpoint also allows MCP/CLI users to automate submissions.
+    The browser runs server-side (headless Chromium).
+    """
+    from tools.autofill import auto_fill_application
+
+    user_data = {
+        "name": body.name,
+        "email": body.email,
+        "phone": body.phone,
+        "linkedin": body.linkedin,
+        "cover_letter": body.cover_letter,
+    }
+
+    result = await auto_fill_application(
+        job_url=body.job_url,
+        user_data=user_data,
+        resume_path=body.resume_path if body.resume_path else None,
+        headless=body.headless,
+    )
+
+    return result
+
+
 @app.get("/health")
 def health():
     """Health check endpoint — no auth required."""
-    return {"status": "ok", "mcp_tools": 7, "version": "4.1.0",
+    return {"status": "ok", "mcp_tools": 7, "version": "4.2.0",
             "agents": ["scout", "research", "writer", "quality", "applier"],
-            "tools": 13, "endpoints": 19, "tests": 20}
+            "tools": 14, "endpoints": 22, "tests": 20}

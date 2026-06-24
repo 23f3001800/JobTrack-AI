@@ -65,12 +65,14 @@ def _analyze_role_fit(job_analysis: str, user_background: str) -> str:
     """Assess candidate-job fit before the Writer agent starts."""
     return _role_fit_real(job_analysis, user_background)
 
-def _tailor_cv_bullets(job_requirements: str, company_profile: str) -> str:
-    return _tailor_real(job_requirements, company_profile)
+def _tailor_cv_bullets(job_requirements: str, company_profile: str,
+                       cv_text: str = "") -> str:
+    return _tailor_real(job_requirements, company_profile, cv_text=cv_text)
 
 def _write_cover_letter(job_analysis: str, company_profile: str,
-                        tailored_bullets: str) -> str:
-    return _letter_real(job_analysis, company_profile, tailored_bullets)
+                        tailored_bullets: str, cv_text: str = "") -> str:
+    return _letter_real(job_analysis, company_profile, tailored_bullets,
+                        cv_text=cv_text)
 
 def _write_outreach_dm(company_name: str, job_title: str,
                       company_profile: str) -> str:

@@ -148,7 +148,7 @@ export default function HomePage() {
             🚀 Start Applying
           </Link>
           <a
-            href="https://github.com/you/jobtrack-ai"
+            href="https://github.com/23f3001800/jobtrack-ai"
             className="btn btn-ghost"
             style={{
               fontSize: "1rem",

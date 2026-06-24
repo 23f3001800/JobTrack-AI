@@ -31,6 +31,7 @@ export interface Application {
   role_fit?: string;
   job_analysis?: string;
   company_profile?: string;
+  notes?: string;
 }
 
 /** Streaming step from /run endpoint */
@@ -88,6 +89,19 @@ export function clearTokens(): void {
 
 export function isLoggedIn(): boolean {
   return !!getToken();
+}
+
+/** Get the current user object from localStorage */
+export function getCurrentUser(): { id: string; email: string; role?: string } | null {
+  if (typeof window === "undefined") return null;
+  const raw = localStorage.getItem("jt_user");
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+/** Get the current user's role (defaults to 'user') */
+export function getUserRole(): string {
+  return getCurrentUser()?.role || "user";
 }
 
 // ──────────────────────────────────────────────
@@ -174,6 +188,14 @@ export async function deleteApplication(appId: string) {
   return apiFetch(`/tracker/${appId}`, { method: "DELETE" });
 }
 
+/** PATCH /tracker/{id}/notes — update application notes */
+export async function updateNotes(appId: string, notes: string) {
+  return apiFetch(`/tracker/${appId}/notes`, {
+    method: "PATCH",
+    body: JSON.stringify({ notes }),
+  });
+}
+
 /** GET /admin/stats — dashboard statistics */
 export async function getStats(): Promise<DashboardStats> {
   return apiFetch("/admin/stats");
@@ -243,4 +265,48 @@ export async function runAgent(
       }
     }
   }
+}
+
+/** POST /jobs/search — search for job postings */
+export async function searchJobs(query: string, location: string = "", maxResults: number = 10) {
+  return apiFetch<{ query: string; location: string; results: Array<{ title: string; url: string; snippet: string; source: string }>; total: number }>(
+    "/jobs/search",
+    { method: "POST", body: JSON.stringify({ query, location, max_results: maxResults }) }
+  );
+}
+
+/** POST /jobs/save — save a job to pipeline */
+export async function saveJob(url: string, title: string, company: string = "", source: string = "") {
+  return apiFetch("/jobs/save", {
+    method: "POST",
+    body: JSON.stringify({ url, title, company, source }),
+  });
+}
+
+/** POST /auth/profile/resume — upload resume PDF */
+export async function uploadResume(file: File): Promise<{ message: string; cv_text: string }> {
+  const token = getToken();
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(`${API_BASE}/auth/profile/resume`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(error.detail || `Upload failed: ${res.status}`);
+  }
+
+  return res.json();
+}
+
+/** PATCH /auth/profile — update user profile */
+export async function updateProfile(data: Record<string, unknown>) {
+  return apiFetch("/auth/profile", {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
 }

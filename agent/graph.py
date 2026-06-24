@@ -54,6 +54,7 @@ class JobState(TypedDict):
     # --- Input (provided by user) ---
     job_url: str  # The job posting URL to process
     user_background: str  # User's background/experience summary
+    cv_text: str  # User's CV text (extracted from uploaded PDF)
 
     # --- Scout Agent outputs ---
     job_analysis: str  # Structured job details (title, requirements, etc.)
@@ -124,12 +125,13 @@ checkpointer = MemorySaver()
 app = builder.compile(checkpointer=checkpointer)
 
 
-def run(job_url: str, user_background: str) -> dict:
+def run(job_url: str, user_background: str, cv_text: str = "") -> dict:
     """Run the full multi-agent pipeline on a job URL.
 
     Args:
         job_url: The job posting URL to process.
         user_background: The user's experience/skills summary.
+        cv_text: The user's CV text (from uploaded resume).
 
     Returns:
         Dict with status, cover_letter, outreach_dm, tailored_bullets,
@@ -143,6 +145,7 @@ def run(job_url: str, user_background: str) -> dict:
     initial = JobState(
         job_url=job_url,
         user_background=user_background,
+        cv_text=cv_text,
         job_analysis="",
         company_profile="",
         role_fit="",

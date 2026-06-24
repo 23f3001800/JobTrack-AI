@@ -12,7 +12,7 @@ auth flow and profile CRUD.
 """
 import os
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel, EmailStr, Field
 
 from api.auth import AuthUser, verify_user
@@ -44,6 +44,10 @@ class ProfileUpdate(BaseModel):
     background: str | None = None
     skills: list[str] | None = None
     cv_text: str | None = None
+    phone: str | None = None
+    linkedin_url: str | None = None
+    github_url: str | None = None
+    default_location: str | None = None
 
 
 # ──────────────────────────────────────────────
@@ -114,6 +118,10 @@ async def signup(body: SignupRequest):
         "background": "",
         "skills": [],
         "cv_text": "",
+        "phone": "",
+        "linkedin_url": "",
+        "github_url": "",
+        "default_location": "",
         "created_at": datetime.now().isoformat(),
     }
     users.append(new_user)
@@ -154,6 +162,22 @@ async def login(body: LoginRequest):
                 "password": body.password,
             })
 
+            # Fetch role from profiles table
+            # WHY a separate query? Supabase Auth doesn't store custom
+            # fields like 'role'. The profiles table holds our RBAC data.
+            user_role = "user"
+            try:
+                service_key = os.getenv("SUPABASE_SERVICE_KEY")
+                if service_key:
+                    admin_client = create_client(supabase_url, service_key)
+                    profile_resp = admin_client.table("profiles").select(
+                        "role"
+                    ).eq("id", result.user.id).single().execute()
+                    if profile_resp.data:
+                        user_role = profile_resp.data.get("role", "user")
+            except Exception:
+                pass  # Default to "user" if profile lookup fails
+
             return {
                 "access_token": result.session.access_token,
                 "refresh_token": result.session.refresh_token,
@@ -161,6 +185,7 @@ async def login(body: LoginRequest):
                 "user": {
                     "id": result.user.id,
                     "email": result.user.email,
+                    "role": user_role,
                 },
             }
 
@@ -229,6 +254,11 @@ async def get_profile(user: AuthUser = Depends(verify_user)):
             "full_name": "",
             "background": "",
             "skills": [],
+            "cv_text": "",
+            "phone": "",
+            "linkedin_url": "",
+            "github_url": "",
+            "default_location": "",
             "message": "Profile not yet set up",
         }
 
@@ -259,3 +289,79 @@ async def update_profile(body: ProfileUpdate,
     updated = db.update_profile(user.user_id, update_data)
 
     return {"message": "Profile updated", "profile": updated}
+
+
+@router.post("/profile/resume")
+async def upload_resume(
+    file: UploadFile = File(...),
+    user: AuthUser = Depends(verify_user),
+):
+    """Upload a resume PDF. Extracts text and stores it in the profile.
+
+    WHY extract text server-side?
+    1. The AI agent needs plain text to generate tailored CVs
+    2. pypdf extraction is fast and reliable for most PDF formats
+    3. The original PDF is also saved for download/auto-fill attachments
+
+    The extracted text is stored in the `cv_text` profile field.
+    The PDF file is saved to workspace/resumes/{user_id}.pdf.
+    """
+    if not user.is_authenticated:
+        raise HTTPException(
+            status_code=403,
+            detail="Resume upload requires user authentication (JWT)",
+        )
+
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
+
+    # Read file content
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:  # 10MB limit
+        raise HTTPException(status_code=400, detail="File too large (max 10MB)")
+
+    # Save PDF to workspace
+    from pathlib import Path
+    resume_dir = Path(os.getenv("WORKSPACE_DIR", "./workspace")) / "resumes"
+    resume_dir.mkdir(parents=True, exist_ok=True)
+    resume_path = resume_dir / f"{user.user_id}.pdf"
+    with open(resume_path, "wb") as f:
+        f.write(content)
+
+    # Extract text using pypdf
+    cv_text = ""
+    try:
+        import io
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(content))
+        pages_text = []
+        for page in reader.pages:
+            text = page.extract_text()
+            if text:
+                pages_text.append(text)
+        cv_text = "\n\n".join(pages_text)
+    except Exception as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Could not extract text from PDF: {e}",
+        )
+
+    if not cv_text.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="PDF appears to be empty or image-only (no extractable text)",
+        )
+
+    # Save extracted text to profile
+    from db import get_db
+    db = get_db()
+    db.update_profile(user.user_id, {
+        "cv_text": cv_text,
+    })
+
+    return {
+        "message": "Resume uploaded and text extracted",
+        "cv_text": cv_text,
+        "file_path": str(resume_path),
+        "pages": len(cv_text.split("\n\n")),
+    }
