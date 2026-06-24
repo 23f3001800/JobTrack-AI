@@ -154,9 +154,11 @@ docker compose up --build  # Backend on :8000, Dashboard on :3000
 | `POST` | `/jobs/save` | JWT/Key | Save a job to pipeline |
 | `GET` | `/tracker` | JWT/Key | List applications (user-scoped) |
 | `PATCH` | `/tracker/{id}/status` | JWT/Key | Update application status |
+| `DELETE` | `/tracker/{id}` | JWT/Key | Delete an application |
 | `POST` | `/generate-pdf` | JWT/Key | Generate tailored PDF resume |
 | `POST` | `/interview-prep` | JWT/Key | Generate tailored interview questions |
 | `POST` | `/followup` | JWT/Key | Generate follow-up messages (email/LinkedIn) |
+| `GET` | `/export/csv` | JWT/Key | Export applications as CSV |
 | `GET` | `/download/{file}` | JWT/Key | Download generated files |
 | `POST` | `/auth/signup` | None | Create account |
 | `POST` | `/auth/login` | None | Get JWT tokens |

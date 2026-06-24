@@ -61,6 +61,11 @@ RUN pip install playwright && \
 RUN useradd -m -u 1001 appuser && \
     mkdir -p workspace && \
     chown -R appuser:appuser /app
+
+# Make entrypoint executable
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 USER appuser
 
 # Expose both API and dashboard ports
@@ -69,8 +74,7 @@ EXPOSE 8000 3000
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 
-# Start the FastAPI backend
-# WHY not start both? Docker best practice is one process per container.
-# Use docker-compose.yml to run dashboard separately.
+# Entrypoint seeds admin, then exec's into uvicorn
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["uvicorn", "api.main:app", \
      "--host", "0.0.0.0", "--port", "8000"]

@@ -52,44 +52,80 @@ class ProfileUpdate(BaseModel):
 
 @router.post("/signup")
 async def signup(body: SignupRequest):
-    """Create a new user via Supabase Auth.
+    """Create a new user.
 
-    WHY not just use the Supabase JS client directly from the frontend?
-    By proxying signup through our API, we can:
-    1. Validate input server-side (email format, password strength)
-    2. The on_auth_user_created trigger auto-creates the profile row
-    3. Return a clean error message instead of Supabase's raw errors
+    Supports two backends:
+    1. Supabase Auth (production) — creates user via admin API
+    2. JSON fallback (local dev) — appends to workspace/users.json
     """
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
 
-    if not supabase_url or not supabase_key:
-        raise HTTPException(
-            status_code=503,
-            detail="Supabase not configured — signup unavailable in local dev mode",
-        )
+    # ── Supabase Auth (production) ──
+    if supabase_url and supabase_key:
+        from supabase import create_client
+        client = create_client(supabase_url, supabase_key)
 
-    from supabase import create_client
-    client = create_client(supabase_url, supabase_key)
+        try:
+            result = client.auth.admin.create_user({
+                "email": body.email,
+                "password": body.password,
+                "email_confirm": True,
+            })
 
-    try:
-        result = client.auth.admin.create_user({
-            "email": body.email,
-            "password": body.password,
-            "email_confirm": True,  # Auto-confirm for dev; disable in prod
-        })
+            return {
+                "user_id": result.user.id,
+                "email": result.user.email,
+                "message": "Account created successfully",
+            }
 
-        return {
-            "user_id": result.user.id,
-            "email": result.user.email,
-            "message": "Account created successfully",
-        }
+        except Exception as e:
+            error_msg = str(e)
+            if "already registered" in error_msg.lower():
+                raise HTTPException(status_code=409, detail="Email already registered")
+            raise HTTPException(status_code=400, detail=f"Signup failed: {error_msg}")
 
-    except Exception as e:
-        error_msg = str(e)
-        if "already registered" in error_msg.lower():
-            raise HTTPException(status_code=409, detail="Email already registered")
-        raise HTTPException(status_code=400, detail=f"Signup failed: {error_msg}")
+    # ── JSON Fallback (local dev) ──
+    import hashlib
+    import json
+    import uuid
+    from datetime import datetime
+    from pathlib import Path
+
+    workspace = Path(os.getenv("WORKSPACE_DIR", "./workspace"))
+    workspace.mkdir(parents=True, exist_ok=True)
+    users_file = workspace / "users.json"
+
+    users = []
+    if users_file.exists():
+        with open(users_file) as f:
+            users = json.load(f)
+
+    # Check for duplicate email
+    if any(u["email"] == body.email for u in users):
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    new_user = {
+        "id": str(uuid.uuid5(uuid.NAMESPACE_DNS, body.email)),
+        "email": body.email,
+        "password_hash": hashlib.sha256(body.password.encode()).hexdigest(),
+        "full_name": "",
+        "role": "user",
+        "background": "",
+        "skills": [],
+        "cv_text": "",
+        "created_at": datetime.now().isoformat(),
+    }
+    users.append(new_user)
+
+    with open(users_file, "w") as f:
+        json.dump(users, f, indent=2)
+
+    return {
+        "user_id": new_user["id"],
+        "email": new_user["email"],
+        "message": "Account created successfully",
+    }
 
 
 @router.post("/login")

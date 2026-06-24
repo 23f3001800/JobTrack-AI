@@ -182,6 +182,48 @@ async def update_status(app_id: str, status: str,
     return {"message": "Status updated", "application": updated}
 
 
+@app.delete("/tracker/{app_id}", tags=["tracker"])
+async def delete_application(app_id: str,
+                             user: AuthUser = Depends(verify_user)):
+    """Delete an application from the tracker.
+
+    WHY allow deleting? Users may have test entries, duplicates,
+    or withdrawn applications they want to clean up. Soft-delete
+    (status=withdrawn) is preferred, but hard delete is also useful.
+    """
+    from db import get_db
+    db = get_db()
+
+    # JsonDB: filter out by index or id
+    if hasattr(db, "tracker_file"):
+        import json
+        with open(db.tracker_file) as f:
+            apps = json.load(f)
+
+        original_len = len(apps)
+        apps = [
+            a for i, a in enumerate(apps)
+            if str(a.get("id", i)) != app_id and str(i) != app_id
+        ]
+
+        if len(apps) == original_len:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Application not found")
+
+        with open(db.tracker_file, "w") as f:
+            json.dump(apps, f, indent=2)
+
+        return {"message": "Application deleted", "id": app_id}
+
+    # SupabaseDB
+    try:
+        db.client.table("applications").delete().eq("id", app_id).execute()
+        return {"message": "Application deleted", "id": app_id}
+    except Exception as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.post("/generate-pdf", tags=["pdf"])
 async def generate_pdf(
     name: str, job_title: str, company: str,
@@ -288,9 +330,50 @@ async def followup(
     return result
 
 
+@app.get("/export/csv", tags=["tools"])
+async def export_csv(user: AuthUser = Depends(verify_user)):
+    """Export all applications as a downloadable CSV file.
+
+    WHY server-side CSV instead of just client-side?
+    CLI and MCP users can't run JavaScript. A server-side endpoint
+    lets automation tools, CI/CD, and scripts download data too.
+    """
+    import csv
+    import io
+
+    from db import get_db
+    db = get_db()
+
+    apps_data = db.get_applications(user_id=user.user_id)
+    if isinstance(apps_data, dict):
+        apps = apps_data.get("applications", [])
+    else:
+        apps = apps_data
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Company", "Position", "Status", "Quality Score", "Applied Date"])
+
+    for app_item in apps:
+        writer.writerow([
+            app_item.get("company", ""),
+            app_item.get("job_title", ""),
+            app_item.get("status", "applied"),
+            app_item.get("quality_score", ""),
+            app_item.get("applied_at", ""),
+        ])
+
+    from fastapi.responses import Response
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=jobtrack_export.csv"},
+    )
+
+
 @app.get("/health")
 def health():
     """Health check endpoint — no auth required."""
-    return {"status": "ok", "mcp_tools": 7, "version": "4.0.0",
+    return {"status": "ok", "mcp_tools": 7, "version": "4.1.0",
             "agents": ["scout", "research", "writer", "quality", "applier"],
-            "tools": 13, "tests": 20}
+            "tools": 13, "endpoints": 19, "tests": 20}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getApplications, updateStatus, type Application } from "@/lib/api";
+import { getApplications, updateStatus, deleteApplication, type Application } from "@/lib/api";
 
 /**
  * Tracker Page — application list with status management.
@@ -66,14 +66,58 @@ export default function TrackerPage() {
   const filtered =
     filter === "all" ? apps : apps.filter((a) => a.status === filter);
 
+  /** Export applications to CSV file */
+  const handleExportCSV = () => {
+    if (apps.length === 0) return;
+
+    const headers = [
+      "Company",
+      "Position",
+      "Status",
+      "Quality Score",
+      "Applied Date",
+    ];
+    const rows = apps.map((a) => [
+      `"${(a.company || "").replace(/"/g, '""')}"`,
+      `"${(a.job_title || "").replace(/"/g, '""')}"`,
+      a.status || "applied",
+      a.quality_score ? String(a.quality_score) : "",
+      a.applied_at
+        ? new Date(a.applied_at).toLocaleDateString()
+        : "",
+    ]);
+
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join(
+      "\n"
+    );
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `jobtrack_export_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="animate-fade-in">
       {/* Page header */}
-      <div className="page-header">
-        <h1>📋 Application Tracker</h1>
-        <p>
-          {apps.length} application{apps.length !== 1 ? "s" : ""} tracked
-        </p>
+      <div className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <h1>📋 Application Tracker</h1>
+          <p>
+            {apps.length} application{apps.length !== 1 ? "s" : ""} tracked
+          </p>
+        </div>
+        {apps.length > 0 && (
+          <button
+            className="btn btn-ghost"
+            onClick={handleExportCSV}
+            style={{ fontSize: "0.8125rem", marginTop: "var(--space-xs)" }}
+          >
+            📥 Export CSV
+          </button>
+        )}
       </div>
 
       {/* Filter bar */}
@@ -329,6 +373,35 @@ export default function TrackerPage() {
                                 </pre>
                               </div>
                             )}
+                          </div>
+
+                          {/* Delete button */}
+                          <div style={{ marginTop: "var(--space-md)", textAlign: "right" }}>
+                            <button
+                              className="btn btn-ghost"
+                              style={{
+                                fontSize: "0.75rem",
+                                color: "var(--error)",
+                                padding: "0.25rem 0.75rem",
+                              }}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (!confirm(`Delete application for ${app.company}?`)) return;
+                                try {
+                                  await deleteApplication(appId);
+                                  setApps((prev) =>
+                                    prev.filter((a, idx) =>
+                                      (a.id || String(idx)) !== appId
+                                    )
+                                  );
+                                  setExpandedId(null);
+                                } catch {
+                                  // Silent fail
+                                }
+                              }}
+                            >
+                              🗑️ Delete Application
+                            </button>
                           </div>
                         </td>
                       </tr>

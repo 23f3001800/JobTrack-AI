@@ -169,6 +169,11 @@ export async function updateStatus(appId: string, status: string) {
   });
 }
 
+/** DELETE /tracker/{id} — remove application */
+export async function deleteApplication(appId: string) {
+  return apiFetch(`/tracker/${appId}`, { method: "DELETE" });
+}
+
 /** GET /admin/stats — dashboard statistics */
 export async function getStats(): Promise<DashboardStats> {
   return apiFetch("/admin/stats");
