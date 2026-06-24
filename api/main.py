@@ -55,9 +55,48 @@ app.include_router(admin_router)
 app.include_router(jobs_router)
 
 
+def _resolve_app_id(app_id: str, db, user_id: str = None) -> str:
+    """Resolve app_id to actual DB id.
+
+    WHY? The frontend may send an array index (e.g., "5") when the app
+    was loaded by position, but Supabase needs the UUID. This helper
+    converts integer indices to UUIDs by looking up the app list.
+    For JsonDB (has tracker_path), returns app_id as-is (indices are valid).
+    """
+    if hasattr(db, "tracker_path"):
+        return app_id  # JsonDB uses indices directly
+
+    # If it already looks like a UUID (contains dashes), return as-is
+    if "-" in app_id and len(app_id) > 20:
+        return app_id
+
+    # It's a numeric index — resolve to UUID
+    try:
+        idx = int(app_id)
+        # Try with user filter first
+        all_apps = db.get_applications(user_id=user_id)
+        if 0 <= idx < len(all_apps) and all_apps[idx].get("id"):
+            return str(all_apps[idx]["id"])
+
+        # Try without user filter (admin/service key case)
+        if user_id:
+            all_apps = db.get_applications(user_id=None)
+            if 0 <= idx < len(all_apps) and all_apps[idx].get("id"):
+                return str(all_apps[idx]["id"])
+    except (ValueError, IndexError):
+        pass
+
+    import logging
+    logging.getLogger("autoapply").warning(
+        "Could not resolve app_id=%s to UUID (user_id=%s)", app_id, user_id
+    )
+    return app_id  # Will likely fail at Supabase but provides error info
+
+
 class RunRequest(BaseModel):
     job_url:         str = Field(..., description="URL of the job posting")
     user_background: str = Field("Python developer", max_length=1000)
+    job_description: str = Field("", description="Pre-fetched job description (skips scraping)")
 
 # Field names → human-readable step labels for the client UI.
 # WHY track these? The streaming endpoint compares state snapshots
@@ -106,6 +145,7 @@ async def run_agent(request: Request, body: RunRequest,
         job_url=body.job_url, user_background=background,
         cv_text=cv_text, user_id=user.user_id or "",
         user_profile=user_profile,
+        job_description_text=body.job_description,
         job_analysis="", company_profile="", role_fit="",
         tailored_bullets="", cover_letter="", outreach_dm="",
         resume_pdf_path="", resume_pdf_url="",
@@ -148,6 +188,99 @@ async def run_agent(request: Request, body: RunRequest,
                              media_type="application/x-ndjson")
 
 
+class BatchRunRequest(BaseModel):
+    jobs: list = Field(..., description="List of jobs to apply to")
+    auto_mode: bool = Field(False, description="Auto-submit without review")
+
+
+@app.post("/batch/run", tags=["batch"])
+@limiter.limit("2/minute")
+async def batch_run(request: Request, body: BatchRunRequest,
+                    user: AuthUser = Depends(verify_user)):
+    """Execute the pipeline on multiple jobs sequentially.
+
+    Streams NDJSON with batch progress updates.
+    Each job gets its own pipeline run.
+    """
+    # Get user profile
+    from db import get_db
+    profile = get_db().get_profile(user.user_id)
+    background = profile.get("background", "")
+    cv_text = profile.get("cv_text", "")
+    user_profile = profile
+
+    total = len(body.jobs)
+
+    async def stream_batch():
+        for idx, job in enumerate(body.jobs):
+            job_url = job.get("url", "")
+            job_desc = job.get("description", "")
+            job_title = job.get("title", "Unknown")
+            job_company = job.get("company", "Unknown")
+
+            # Batch progress header
+            yield json.dumps({
+                "step": "batch_progress",
+                "current": idx + 1,
+                "total": total,
+                "job_title": job_title,
+                "job_company": job_company,
+            }) + "\n"
+
+            thread_id = f"batch-{uuid.uuid4().hex[:8]}"
+
+            # Set status based on auto_mode
+            initial = JobState(
+                job_url=job_url, user_background=background,
+                cv_text=cv_text, user_id=user.user_id or "",
+                user_profile=user_profile,
+                job_description_text=job_desc,
+                job_analysis="", company_profile="", role_fit="",
+                tailored_bullets="", cover_letter="", outreach_dm="",
+                resume_pdf_path="", resume_pdf_url="",
+                quality_score=0, quality_feedback="", quality_attempts=0,
+                log_result="", messages=[], iterations=0,
+            )
+            config = {"configurable": {"thread_id": thread_id}}
+
+            try:
+                prev_state = {}
+                async for state in agent_app.astream(
+                    initial, config=config, stream_mode="values"
+                ):
+                    for field, label in STEP_LABELS.items():
+                        if state.get(field) and not prev_state.get(field):
+                            yield json.dumps({
+                                "step": label,
+                                "status": "done",
+                                "batch_index": idx + 1,
+                                "preview": state[field][:120].replace("\n", " ")
+                            }) + "\n"
+                    prev_state = dict(state)
+
+                yield json.dumps({
+                    "step": "job_complete",
+                    "batch_index": idx + 1,
+                    "job_title": job_title,
+                    "status": "applied" if body.auto_mode else "draft",
+                }) + "\n"
+
+            except Exception as e:
+                yield json.dumps({
+                    "step": "job_error",
+                    "batch_index": idx + 1,
+                    "job_title": job_title,
+                    "message": str(e),
+                }) + "\n"
+
+        yield json.dumps({
+            "step": "batch_complete",
+            "total": total,
+        }) + "\n"
+
+    return StreamingResponse(stream_batch(), media_type="application/x-ndjson")
+
+
 @app.get("/tracker", tags=["tracker"])
 async def get_tracker(user: AuthUser = Depends(verify_user)):
     """Return tracked job applications.
@@ -186,7 +319,8 @@ async def update_status(app_id: str, status: str,
 
     from db import get_db
     db = get_db()
-    updated = db.update_application_status(app_id, status)
+    resolved_id = _resolve_app_id(app_id, db, user.user_id if user.is_authenticated else None)
+    updated = db.update_application_status(resolved_id, status)
     return {"message": "Status updated", "application": updated}
 
 
@@ -203,9 +337,9 @@ async def delete_application(app_id: str,
     db = get_db()
 
     # JsonDB: filter out by index or id
-    if hasattr(db, "tracker_file"):
+    if hasattr(db, "tracker_path"):
         import json
-        with open(db.tracker_file) as f:
+        with open(db.tracker_path) as f:
             apps = json.load(f)
 
         original_len = len(apps)
@@ -218,18 +352,31 @@ async def delete_application(app_id: str,
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Application not found")
 
-        with open(db.tracker_file, "w") as f:
+        with open(db.tracker_path, "w") as f:
             json.dump(apps, f, indent=2)
 
         return {"message": "Application deleted", "id": app_id}
 
     # SupabaseDB
+    import logging
+    logger = logging.getLogger("autoapply")
+    user_id = user.user_id if user.is_authenticated else None
+    resolved_id = _resolve_app_id(app_id, db, user_id)
+    logger.info("DELETE app_id=%s resolved_id=%s user_id=%s", app_id, resolved_id, user_id)
+
     try:
-        db.client.table("applications").delete().eq("id", app_id).execute()
-        return {"message": "Application deleted", "id": app_id}
+        result = db.client.table("applications").delete().eq("id", resolved_id).execute()
+        deleted_count = len(result.data) if result.data else 0
+        logger.info("Deleted %d rows for id=%s", deleted_count, resolved_id)
+        return {"message": "Application deleted", "id": resolved_id, "deleted": deleted_count}
     except Exception as e:
+        logger.error("Delete failed for id=%s: %s", resolved_id, e)
+        # If resolved_id is not a valid UUID, Supabase throws — give a clear error
         from fastapi import HTTPException
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Could not delete application '{app_id}' (resolved to '{resolved_id}'): {e}"
+        )
 
 
 class NotesUpdate(BaseModel):
@@ -250,9 +397,9 @@ async def update_notes(app_id: str, body: NotesUpdate,
     db = get_db()
 
     # JsonDB: update by index or id
-    if hasattr(db, "tracker_file"):
+    if hasattr(db, "tracker_path"):
         import json as _json
-        with open(db.tracker_file) as f:
+        with open(db.tracker_path) as f:
             apps = _json.load(f)
 
         updated = False
@@ -266,16 +413,17 @@ async def update_notes(app_id: str, body: NotesUpdate,
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Application not found")
 
-        with open(db.tracker_file, "w") as f:
+        with open(db.tracker_path, "w") as f:
             _json.dump(apps, f, indent=2)
 
         return {"message": "Notes updated", "id": app_id, "notes": body.notes}
 
     # SupabaseDB
+    resolved_id = _resolve_app_id(app_id, db, user.user_id if user.is_authenticated else None)
     db.client.table("applications").update(
         {"notes": body.notes}
-    ).eq("id", app_id).execute()
-    return {"message": "Notes updated", "id": app_id, "notes": body.notes}
+    ).eq("id", resolved_id).execute()
+    return {"message": "Notes updated", "id": resolved_id, "notes": body.notes}
 
 
 class FieldsUpdate(BaseModel):
@@ -303,9 +451,9 @@ async def update_fields(app_id: str, body: FieldsUpdate,
     db = get_db()
 
     # JsonDB: update by index or id
-    if hasattr(db, "tracker_file"):
+    if hasattr(db, "tracker_path"):
         import json as _json
-        with open(db.tracker_file) as f:
+        with open(db.tracker_path) as f:
             apps = _json.load(f)
 
         updated = False
@@ -319,16 +467,17 @@ async def update_fields(app_id: str, body: FieldsUpdate,
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Application not found")
 
-        with open(db.tracker_file, "w") as f:
+        with open(db.tracker_path, "w") as f:
             _json.dump(apps, f, indent=2)
 
         return {"message": "Fields updated", "id": app_id}
 
     # SupabaseDB
+    resolved_id = _resolve_app_id(app_id, db, user.user_id if user.is_authenticated else None)
     db.client.table("applications").update(
         update_data
-    ).eq("id", app_id).execute()
-    return {"message": "Fields updated", "id": app_id}
+    ).eq("id", resolved_id).execute()
+    return {"message": "Fields updated", "id": resolved_id}
 
 
 @app.post("/generate-pdf", tags=["pdf"])

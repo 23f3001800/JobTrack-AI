@@ -56,14 +56,20 @@ export default function ReviewPage() {
       setLoading(true);
       const data = await getApplications();
       const apps = data.applications || [];
-      const index = parseInt(appId, 10);
 
-      if (isNaN(index) || index < 0 || index >= apps.length) {
+      // Support both UUID-based lookup (Supabase) and index-based (JsonDB)
+      let application = apps.find((a: Application) => String(a.id) === appId);
+      if (!application) {
+        // Fallback: try as array index (for JsonDB or legacy URLs)
+        const index = parseInt(appId, 10);
+        if (!isNaN(index) && index >= 0 && index < apps.length) {
+          application = apps[index];
+        }
+      }
+      if (!application) {
         setError("Application not found");
         return;
       }
-
-      const application = apps[index];
       setApp(application);
       setCoverLetter(application.cover_letter || "");
       setTailoredBullets(application.tailored_bullets || "");
@@ -98,12 +104,15 @@ export default function ReviewPage() {
       if (tailoredBullets !== (app.tailored_bullets || "")) fields.tailored_bullets = tailoredBullets;
       if (outreachDm !== (app.outreach_dm || "")) fields.outreach_dm = outreachDm;
 
+      // Use the actual DB id (UUID for Supabase, or index-based for JSON)
+      const dbId = app.id || appId;
+
       if (Object.keys(fields).length > 0) {
-        await updateApplicationFields(appId, fields);
+        await updateApplicationFields(String(dbId), fields);
       }
 
       // 2. Update status to applied
-      await updateStatus(appId, "applied");
+      await updateStatus(String(dbId), "applied");
       toast("Application submitted successfully!", "success");
       router.push("/dashboard/tracker");
     } catch {
@@ -119,7 +128,9 @@ export default function ReviewPage() {
     setDeleting(true);
 
     try {
-      await deleteApplication(appId);
+      // Use actual DB id, not URL param index
+      const dbId = app?.id || appId;
+      await deleteApplication(String(dbId));
       toast("Draft discarded", "success");
       router.push("/dashboard/tracker");
     } catch {
@@ -261,20 +272,36 @@ export default function ReviewPage() {
       {/* ──────── Resume PDF Download ──────── */}
       {app.resume_pdf_url && (
         <div className="glass-card" style={{ padding: "var(--space-lg)", marginBottom: "var(--space-md)" }}>
-          <a
-            href={API_BASE + app.resume_pdf_url}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
             className="btn btn-ghost"
             style={{
               display: "inline-flex",
               alignItems: "center",
               gap: "var(--space-sm)",
-              textDecoration: "none",
+            }}
+            onClick={async () => {
+              try {
+                const token = localStorage.getItem("jt_access_token") || "";
+                const resp = await fetch(API_BASE + app.resume_pdf_url, {
+                  headers: { Authorization: `Bearer ${token}` },
+                });
+                if (!resp.ok) throw new Error(`Download failed: ${resp.status}`);
+                const blob = await resp.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = app.resume_pdf_url?.split("/").pop() || "resume.pdf";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              } catch {
+                toast("Failed to download resume", "error");
+              }
             }}
           >
             📄 Download Tailored Resume
-          </a>
+          </button>
         </div>
       )}
 

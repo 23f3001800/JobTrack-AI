@@ -360,3 +360,68 @@ export async function completeOnboarding(profileData: Record<string, unknown>) {
     body: JSON.stringify({ ...profileData, onboarding_complete: true }),
   });
 }
+
+/** POST /jobs/discover — AI-powered job discovery using resume profile */
+export async function discoverJobs(
+  provider: string = "auto",
+  location: string = "",
+  maxResults: number = 20,
+  role: string = ""
+): Promise<{ queries_used: Record<string, string>[]; results: Record<string, unknown>[]; total: number; inferred_role?: string; error?: string }> {
+  return apiFetch("/jobs/discover", {
+    method: "POST",
+    body: JSON.stringify({ provider, location, max_results: maxResults, role }),
+  });
+}
+
+/** GET /jobs/providers — list available job search providers */
+export async function getProviders(): Promise<{ providers: Record<string, unknown>[] }> {
+  return apiFetch("/jobs/providers");
+}
+
+/** Job payload for batch pipeline */
+export interface BatchJob {
+  url: string;
+  title: string;
+  company: string;
+  description: string;
+}
+
+/**
+ * POST /batch/run — run the multi-agent pipeline on multiple jobs.
+ *
+ * Streams NDJSON progress updates for each job in the batch.
+ */
+export async function runBatch(
+  jobs: BatchJob[],
+  autoMode: boolean,
+  onStep: (step: Record<string, unknown>) => void
+): Promise<void> {
+  const token = getToken();
+  const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const resp = await fetch(`${base}/batch/run`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({ jobs, auto_mode: autoMode }),
+  });
+  if (!resp.ok) throw new Error(`Batch failed: ${resp.status}`);
+  const reader = resp.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      if (line.trim()) {
+        try { onStep(JSON.parse(line)); } catch {}
+      }
+    }
+  }
+}

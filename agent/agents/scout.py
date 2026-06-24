@@ -30,6 +30,15 @@ def run_scout(state: dict) -> dict:
     scrape — that requires LLM reasoning. Building the agent
     structure now avoids a rewrite later.
     """
+    # If job description was pre-fetched from search API, skip scraping
+    pre_fetched = state.get("job_description_text", "")
+    if pre_fetched:
+        return {
+            "job_analysis": pre_fetched,
+            "messages": [{"agent": "scout", "content": "Using pre-fetched job description (no scraping needed)"}],
+            "iterations": state.get("iterations", 0) + 1,
+        }
+
     job_url = state["job_url"]
 
     # For URL mode, we can skip the LLM and call the tool directly.

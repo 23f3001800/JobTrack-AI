@@ -59,6 +59,7 @@ class JobState(TypedDict):
     cv_text: str  # User's CV text (extracted from uploaded PDF)
     user_id: str  # User ID for scoping applications
     user_profile: dict  # Full user profile with parsed_profile for PDF generation
+    job_description_text: str  # Pre-fetched JD from search API (skips scraping when set)
 
     # --- Scout Agent outputs ---
     job_analysis: str  # Structured job details (title, requirements, etc.)
@@ -159,6 +160,7 @@ def run(job_url: str, user_background: str, cv_text: str = "",
         cv_text=cv_text,
         user_id=user_id,
         user_profile={},
+        job_description_text="",
         job_analysis="",
         company_profile="",
         role_fit="",
