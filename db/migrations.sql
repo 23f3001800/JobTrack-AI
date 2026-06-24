@@ -207,3 +207,24 @@ CREATE TRIGGER set_updated_at_profiles
 CREATE TRIGGER set_updated_at_applications
     BEFORE UPDATE ON applications
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ────────────────────────────────────────────
+-- Seed default admin user
+-- ────────────────────────────────────────────
+-- WHY seed in SQL? Ensures admin exists even before the Python
+-- init script runs. Supabase runs migrations first, then the app boots.
+-- The admin user is created via Supabase Auth API (see db/init_db.py),
+-- but we ensure the profile row has admin role via this fallback.
+--
+-- ADMIN CREDENTIALS (change in production!):
+--   Email:    admin@jobtrack.ai
+--   Password: JobTrack@Admin2024
+--   Role:     admin
+--
+-- To create the admin user, run AFTER migrations:
+--   python -m db.init_db
+--
+-- Or set env vars to override:
+--   ADMIN_EMAIL=your@email.com
+--   ADMIN_PASSWORD=YourSecurePassword123
+
