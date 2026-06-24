@@ -100,7 +100,7 @@ export default function TrackerPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `jobtrack_export_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `autoapply_export_${new Date().toISOString().slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
     toast(`Exported ${apps.length} applications`, "success");

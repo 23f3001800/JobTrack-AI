@@ -87,7 +87,7 @@ def _load_tracker_apps() -> list[dict]:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Evaluate JobTrack AI application quality"
+        description="Evaluate AutoApply AI application quality"
     )
     parser.add_argument(
         "--workspace", "-w",

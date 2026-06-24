@@ -1,4 +1,4 @@
-"""FastAPI application — JobTrack AI REST API.
+"""FastAPI application — AutoApply AI REST API.
 
 Serves three audiences:
 1. Web dashboard (Next.js frontend) — JWT-authenticated user requests
@@ -35,7 +35,7 @@ load_dotenv()
 
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(
-    title="JobTrack AI",
+    title="AutoApply AI",
     version="3.0.0",
     description="Multi-agent job application system with Supabase backend",
 )
@@ -474,7 +474,7 @@ async def export_csv(user: AuthUser = Depends(verify_user)):
     return Response(
         content=output.getvalue(),
         media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=jobtrack_export.csv"},
+        headers={"Content-Disposition": "attachment; filename=autoapply_export.csv"},
     )
 
 

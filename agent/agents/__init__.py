@@ -1,4 +1,4 @@
-"""Sub-agent modules for the multi-agent JobTrack AI system.
+"""Sub-agent modules for the multi-agent AutoApply AI system.
 
 Architecture overview:
 - Supervisor: Deterministic router that decides which agent runs next

@@ -1,5 +1,5 @@
 /**
- * API Client — typed fetch wrapper for the JobTrack AI backend.
+ * API Client — typed fetch wrapper for the AutoApply AI backend.
  *
  * WHY a custom client instead of using fetch directly?
  * 1. Centralized auth header injection (JWT or API key)

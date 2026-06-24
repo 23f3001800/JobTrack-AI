@@ -1,4 +1,4 @@
-"""Multi-agent LangGraph for JobTrack AI.
+"""Multi-agent LangGraph for AutoApply AI.
 
 Architecture:
     Supervisor (deterministic router)
@@ -40,7 +40,7 @@ from agent.agents.writer import run_writer
 load_dotenv()
 
 if os.getenv("LANGCHAIN_TRACING_V2") == "true":
-    os.environ.setdefault("LANGCHAIN_PROJECT", "jobtrack-ai")
+    os.environ.setdefault("LANGCHAIN_PROJECT", "autoapply-ai")
 
 
 class JobState(TypedDict):

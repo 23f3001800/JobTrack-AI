@@ -359,7 +359,7 @@ export default function OnboardingPage() {
         {step === 1 && (
           <div style={{ textAlign: "center" }}>
             <h1 style={{ fontSize: "1.75rem", fontWeight: 700, marginBottom: "var(--space-xs)" }}>
-              🎯 Welcome to JobTrack AI
+              🎯 Welcome to AutoApply AI
             </h1>
             <p style={{ color: "var(--text-secondary)", marginBottom: "var(--space-2xl)", fontSize: "0.9375rem" }}>
               Upload your resume to get started. We&apos;ll extract your profile automatically.

@@ -21,7 +21,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 # Configure structured logging
 # WHY structured logging? JSON logs are parseable by log aggregators
 # (Datadog, CloudWatch, etc.) for production monitoring.
-logger = logging.getLogger("jobtrack")
+logger = logging.getLogger("autoapply")
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",

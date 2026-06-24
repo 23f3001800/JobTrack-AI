@@ -1,4 +1,4 @@
-# 🎯 JobTrack AI — Multi-Agent Job Application System
+# 🎯 AutoApply AI — Multi-Agent Job Application System
 
 > **I used this agent to prepare my application for this interview.**
 
@@ -12,8 +12,8 @@ analyses your fit, tailors your CV, writes a personalised cover letter, generate
 a PDF resume, and quality-checks everything — in **under 8 minutes**. A built-in
 self-review loop ensures output quality stays above 4/5.
 
-**[Live Dashboard](https://jobtrack.up.railway.app)** ·
-**[API Docs](https://jobtrack.up.railway.app/docs)** ·
+**[Live Dashboard](https://autoapply.up.railway.app)** ·
+**[API Docs](https://autoapply.up.railway.app/docs)** ·
 **[LangSmith Traces](https://smith.langchain.com)**
 
 ---
@@ -118,7 +118,7 @@ The Next.js dashboard provides:
 
 ### Backend
 ```bash
-git clone https://github.com/you/jobtrack-ai && cd jobtrack-ai
+git clone https://github.com/you/autoapply-ai && cd autoapply-ai
 pip install -r requirements.txt && playwright install chromium
 cp .env.example .env  # Add ANTHROPIC_API_KEY, set CV_PATH
 uvicorn api.main:app --port 8000 --reload
@@ -134,7 +134,7 @@ npm run dev  # → http://localhost:3000
 
 ### MCP (Claude Desktop)
 ```json
-{"mcpServers": {"jobtrack": {"command": "python", "args": ["/path/to/mcp/server.py"]}}}
+{"mcpServers": {"autoapply": {"command": "python", "args": ["/path/to/mcp/server.py"]}}}
 ```
 Then ask Claude: *"Search for Python AI engineer jobs"* or *"List my applications"*
 
@@ -172,7 +172,7 @@ docker compose up --build  # Backend on :8000, Dashboard on :3000
 ## Project Structure
 
 ```
-jobtrack-ai/
+autoapply-ai/
 ├── agent/
 │   ├── graph.py              # LangGraph StateGraph orchestrator
 │   └── agents/               # 6 sub-agent modules

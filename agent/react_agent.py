@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SYSTEM_PROMPT = """You are JobTrack AI — an autonomous job application agent.
+SYSTEM_PROMPT = """You are AutoApply AI — an autonomous job application agent.
 
 Given a job URL and a user's background, you MUST call tools in this exact order:
 1. scrape_job_url — extract job details
@@ -31,7 +31,7 @@ def run(job_url: str, user_background: str = "") -> dict:
     max_iter = int(os.getenv("MAX_AGENT_ITERATIONS", 10))
 
     print(f"\n{'='*55}")
-    print(f"JobTrack AI — processing: {job_url}")
+    print(f"AutoApply AI — processing: {job_url}")
     print(f"{'='*55}")
 
     while iteration < max_iter:

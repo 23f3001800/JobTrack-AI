@@ -80,7 +80,7 @@ export default function LoginPage() {
             background: "var(--accent-gradient)",
             WebkitBackgroundClip: "text",
             WebkitTextFillColor: "transparent",
-          }}>JobTrack AI</span>
+          }}>AutoApply AI</span>
         </h1>
         <p className="login-subtitle">
           {isSignup ? "Create your account" : "Sign in to your dashboard"}

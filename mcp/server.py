@@ -1,6 +1,6 @@
-"""MCP Server — Claude Desktop integration for JobTrack AI.
+"""MCP Server — Claude Desktop integration for AutoApply AI.
 
-This exposes JobTrack's capabilities as MCP tools that Claude Desktop
+This exposes AutoApply's capabilities as MCP tools that Claude Desktop
 can call directly. Users can ask Claude:
 - "Search for Python AI engineer jobs in London"
 - "List my applications"
@@ -16,7 +16,7 @@ talk to the same backend (workspace files, DB, agents) as the API.
 SETUP in claude_desktop_config.json:
 {
   "mcpServers": {
-    "jobtrack": {
+    "autoapply": {
       "command": "python",
       "args": ["/path/to/mcp/server.py"]
     }
@@ -35,7 +35,7 @@ load_dotenv()
 WORKSPACE = Path(os.getenv("WORKSPACE_DIR", "./workspace"))
 WORKSPACE.mkdir(exist_ok=True)
 
-mcp = FastMCP("jobtrack-ai")
+mcp = FastMCP("autoapply-ai")
 
 
 # ── Workspace Tools ──

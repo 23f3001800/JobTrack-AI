@@ -12,7 +12,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "JobTrack AI — Intelligent Job Application Agent",
+  title: "AutoApply AI — Intelligent Job Application Agent",
   description:
     "AI-powered multi-agent system that scrapes jobs, researches companies, writes personalised cover letters, and tracks your applications.",
 };

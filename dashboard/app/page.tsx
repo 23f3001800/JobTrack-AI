@@ -1,5 +1,5 @@
 /**
- * Landing Page — the public-facing homepage for JobTrack AI.
+ * Landing Page — the public-facing homepage for AutoApply AI.
  *
  * WHY a dedicated landing page instead of redirecting to /login?
  * First impressions matter. A polished landing page with feature
@@ -33,7 +33,7 @@ export default function HomePage() {
       >
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-sm)" }}>
           <span style={{ fontSize: "1.5rem" }}>🎯</span>
-          <span style={{ fontSize: "1.25rem", fontWeight: 700 }}>JobTrack AI</span>
+          <span style={{ fontSize: "1.25rem", fontWeight: 700 }}>AutoApply AI</span>
         </div>
         <div style={{ display: "flex", gap: "var(--space-md)" }}>
           <Link
@@ -417,7 +417,7 @@ export default function HomePage() {
       >
         Built with LangGraph, Claude, Next.js, FastAPI, and Supabase.
         <br />
-        © {new Date().getFullYear()} JobTrack AI
+        © {new Date().getFullYear()} AutoApply AI
       </footer>
     </div>
   );

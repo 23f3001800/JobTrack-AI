@@ -1,4 +1,4 @@
-"""Database package for JobTrack AI.
+"""Database package for AutoApply AI.
 
 Provides a unified data access layer that works with:
 1. Supabase (PostgreSQL) — for production and deployed environments

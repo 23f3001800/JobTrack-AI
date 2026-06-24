@@ -80,7 +80,7 @@ export default function DashboardLayout({
           ☰
         </button>
         <Link href="/dashboard" style={{ textDecoration: "none", color: "var(--text-primary)", fontWeight: 600 }}>
-          🎯 JobTrack AI
+          🎯 AutoApply AI
         </Link>
         <div style={{ width: 32 }} /> {/* Spacer for centering */}
       </div>
@@ -95,7 +95,7 @@ export default function DashboardLayout({
       <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
         {/* Logo */}
         <Link href="/dashboard" className="sidebar-logo">
-          🎯 <span>JobTrack AI</span>
+          🎯 <span>AutoApply AI</span>
         </Link>
 
         {/* Navigation */}

@@ -10,8 +10,8 @@ Usage:
     python -m db.init_db
 
 Admin credentials (change in production!):
-    Email:    admin@jobtrack.ai
-    Password: JobTrack@Admin2024
+    Email:    admin@autoapply.ai
+    Password: AutoApply@Admin2024
     Role:     admin
 """
 import hashlib
@@ -28,9 +28,9 @@ load_dotenv()
 # ── Default Admin Credentials ──
 # WHY hardcoded defaults? For local dev and first-run convenience.
 # In production, override via ADMIN_EMAIL and ADMIN_PASSWORD env vars.
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@jobtrack.ai")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "JobTrack@Admin2024")
-ADMIN_NAME = "JobTrack Admin"
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@autoapply.ai")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "AutoApply@Admin2024")
+ADMIN_NAME = "AutoApply Admin"
 
 
 def _hash_password(password: str) -> str:
@@ -118,8 +118,8 @@ def init_json_db():
     admin_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, ADMIN_EMAIL))
 
     # Regular test user credentials
-    test_email = "user@jobtrack.ai"
-    test_password = "JobTrack@User2024"
+    test_email = "user@autoapply.ai"
+    test_password = "AutoApply@User2024"
     test_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, test_email))
 
     # Load existing users or create new
@@ -207,7 +207,7 @@ def init_tracker():
 def main():
     """Initialize the database and seed admin user."""
     print("=" * 50)
-    print("🗄️  JobTrack AI — Database Initialization")
+    print("🗄️  AutoApply AI — Database Initialization")
     print("=" * 50)
     print()
 
@@ -227,8 +227,8 @@ def main():
     print(f"   Password: {ADMIN_PASSWORD}")
     print()
     print("  👤 Regular User:")
-    print("   Email:    user@jobtrack.ai")
-    print("   Password: JobTrack@User2024")
+    print("   Email:    user@autoapply.ai")
+    print("   Password: AutoApply@User2024")
     print("=" * 50)
     print()
     print("⚠️  Change these in production via ADMIN_EMAIL and ADMIN_PASSWORD env vars!")
